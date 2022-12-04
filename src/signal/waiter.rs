@@ -6,7 +6,6 @@ use std::{
     task::{Context, Wake, Waker as AsyncWaker},
 };
 
-use futures::AsyncWrite;
 use parking_lot::Mutex;
 
 pub(crate) struct Waiter {

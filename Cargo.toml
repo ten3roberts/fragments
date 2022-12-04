@@ -16,6 +16,11 @@ slotmap = "1.0"
 dashmap = "5.4"
 flume = "0.10"
 waker-fn = "1.1"
+pin-project = "1.0.12"
+atomic_refcell = "0.1.8"
+tracing = "0.1.37"
+tracing-tree = "0.2.2"
+tracing-subscriber = "0.3.16"
 
 [dev-dependencies]
 tokio = { version = "1.22", features = [

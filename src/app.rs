@@ -1,17 +1,16 @@
-use crate::{error::Error, Scope, Widget};
-use dashmap::DashSet;
+use crate::{
+    error::Error,
+    signal::{Effect, EffectReceiver, EffectSender, Signal, SignalEffect},
+    Scope, Widget,
+};
 use flax::World;
 use flume::{Receiver, Sender};
-use futures::{Future, StreamExt};
-use futures_signals::signal::{Signal, SignalExt};
-use parking_lot::Mutex;
+use futures::StreamExt;
 use slotmap::{new_key_type, SlotMap};
 use std::sync::Arc;
 use tokio::runtime::{Handle, Runtime};
 
 new_key_type! { pub struct EffectKey; }
-
-pub type Effect = Box<dyn FnMut(&mut App, &mut World)>;
 
 // trait Effect {
 //     /// Executes the effect on the world
@@ -39,66 +38,62 @@ pub type Effect = Box<dyn FnMut(&mut App, &mut World)>;
 
 pub struct App {
     world: World,
+    effects_tx: EffectSender,
+    effects_rx: EffectReceiver,
     runtime: Runtime,
 }
 
 impl App {
     pub fn new() -> Self {
+        let (effects_tx, effects_rx) = flume::unbounded();
+
         Self {
             world: Default::default(),
             runtime: tokio::runtime::Builder::new_multi_thread()
                 .enable_all()
                 .build()
                 .unwrap(),
+            effects_tx,
+            effects_rx,
+        }
+    }
+
+    pub fn update(&mut self) {
+        while let Ok(effect) = self.effects_rx.try_recv() {
+            effect.poll_effect(self);
         }
     }
 
     /// Enters the render loop
     pub fn run(mut self, root: impl Widget) -> Result<(), Error> {
-        let app = Arc::new(Mutex::new(self));
-        let mut world = World::new();
-        let scope = Scope::new(&mut self, &mut world, None);
-        root.render(scope);
-
         let rt = self.runtime.handle().clone();
+        rt.block_on(async move {
+            let scope = Scope::spawn(&mut self, None);
+            root.render(scope);
 
+            let mut pending_effects = self.effects_rx.clone().into_stream();
+            eprintln!("Waiting for pending effects");
+            while let Some(effect) = pending_effects.next().await {
+                effect.poll_effect(&mut self);
+            }
+        });
         Ok(())
     }
 
-    pub fn create_effect<S>(
-        &mut self,
-        signal: S,
-        mut effect: impl FnMut(&mut World, S::Item) -> bool + 'static + Send,
-    ) where
-        S: 'static + Send + Signal,
-        S::Item: 'static + Send,
-    {
-        let value: Arc<Mutex<Option<S::Item>>> = Arc::new(Mutex::new(None));
-
-        let v = value.clone();
-
-        let world = self.world.clone();
-        self.runtime.spawn(async move {
-            let items = signal.to_stream();
-            tokio::pin!(items);
-            loop {
-                while let Some(item) = items.next().await {
-                    let world = world.lock();
-                    effect() * value.lock() = Some(item);
-                    match tx.send(AppEvent::RunEffect(effect)) {
-                        Ok(()) => {}
-                        Err(_) => break,
-                    };
-                }
-            }
-        });
-    }
-    pub fn runtime(&self) -> &Handle {
-        self.rt.handle()
+    pub(crate) fn run_effect<E: Effect>(&self, effect: Arc<E>) {
+        self.effects_tx.send(effect).ok();
     }
 
-    pub fn events_tx(&self) -> &Sender<AppEvent> {
-        &self.events_tx
+    pub(crate) fn effects_tx(&self) -> &EffectSender {
+        &self.effects_tx
+    }
+
+    pub fn world(&self) -> &World {
+        &self.world
+    }
+
+    pub fn world_mut(&mut self) -> &mut World {
+        &mut self.world
     }
 }
 

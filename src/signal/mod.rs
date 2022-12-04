@@ -1,18 +1,26 @@
+mod app_signal;
+mod map;
 mod waiter;
+
+pub use app_signal::*;
+pub use map::*;
 
 use std::{
     pin::Pin,
-    sync::Arc,
+    sync::{Arc, Weak},
     task::{Context, Poll},
 };
 
 use futures::{Future, Stream};
 use parking_lot::{RwLock, RwLockWriteGuard};
 
-use self::waiter::{WaitList, Waiter};
+use self::{
+    map::Map,
+    waiter::{WaitList, Waiter},
+};
 
-pub trait Signal {
-    type Item;
+pub trait Signal<'a> {
+    type Item: 'a;
     // where
     //     Self: 'a;
 
@@ -20,14 +28,22 @@ pub trait Signal {
     ///
     /// When the next item is ready, `resolve` will be used to turn the temporary borrow into an
     /// Item, E.g; by cloning.
-    fn poll_changed<U, F: for<'x> Fn(&'x Self::Item) -> U>(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        resolve: F,
-    ) -> Poll<U>;
+    fn poll_changed(self: Pin<&'a mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>>;
 
     fn next_value(&mut self) -> SignalFuture<&mut Self> {
         SignalFuture { signal: self }
+    }
+
+    fn map<F, U>(self, f: F) -> Map<Self, F>
+    where
+        F: FnMut(Self::Item) -> U,
+        Self: Sized,
+    {
+        Map { signal: self, f }
+    }
+
+    fn by_ref(&mut self) -> &mut Self {
+        self
     }
 
     fn into_stream(self) -> SignalStream<Self>
@@ -38,23 +54,19 @@ pub trait Signal {
     }
 }
 
-impl<'s, S> Signal for &'s mut S
+impl<'a, 's, S> Signal<'a> for &'s mut S
 where
-    S: Unpin + Signal,
+    S: Unpin + Signal<'a>,
 {
     type Item = S::Item;
 
-    fn poll_changed<U, F: for<'x> Fn(&'x Self::Item) -> U>(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        resolve: F,
-    ) -> Poll<U> {
+    fn poll_changed(self: Pin<&'a mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let v = &mut **self.get_mut();
-        Pin::new(v).poll_changed(cx, resolve)
+        Pin::new(v).poll_changed(cx)
     }
 }
 
-struct Mutable<T> {
+pub struct Mutable<T> {
     inner: Arc<RwLock<MutableInner<T>>>,
 }
 
@@ -68,17 +80,17 @@ impl<T> Mutable<T> {
         }
     }
 
-    pub fn write(&self) -> MutableGuard<T> {
+    pub fn write(&self) -> MutableWriteGuard<T> {
         let inner = self.inner.write();
-        MutableGuard { inner }
+        MutableWriteGuard { inner }
     }
 }
 
-struct MutableGuard<'a, T> {
+pub struct MutableWriteGuard<'a, T> {
     inner: RwLockWriteGuard<'a, MutableInner<T>>,
 }
 
-impl<'a, T> std::ops::Deref for MutableGuard<'a, T> {
+impl<'a, T> std::ops::Deref for MutableWriteGuard<'a, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -86,13 +98,13 @@ impl<'a, T> std::ops::Deref for MutableGuard<'a, T> {
     }
 }
 
-impl<'a, T> std::ops::DerefMut for MutableGuard<'a, T> {
+impl<'a, T> std::ops::DerefMut for MutableWriteGuard<'a, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner.value
     }
 }
 
-impl<'a, T> Drop for MutableGuard<'a, T> {
+impl<'a, T> Drop for MutableWriteGuard<'a, T> {
     fn drop(&mut self) {
         self.inner.wakers.wake_all();
     }
@@ -111,31 +123,33 @@ impl<T> Mutable<T> {
 
         MutableSignal {
             waker,
-            state: self.inner.clone(),
+            state: Arc::downgrade(&self.inner),
         }
     }
 }
 
-struct MutableSignal<T> {
+pub struct MutableSignal<T> {
     waker: Arc<Waiter>,
-    state: Arc<RwLock<MutableInner<T>>>,
+    state: Weak<RwLock<MutableInner<T>>>,
 }
 
-impl<T> Signal for MutableSignal<T>
+impl<'a, T> Signal<'a> for MutableSignal<T>
 where
-    T: 'static + Clone,
+    T: 'a + Clone,
 {
     type Item = T;
 
-    fn poll_changed<U, F: for<'x> Fn(&'x Self::Item) -> U>(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        resolve: F,
-    ) -> Poll<U> {
+    fn poll_changed(self: Pin<&'a mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        eprintln!("Polling changed");
         if self.waker.take_changed() {
-            let guard = self.state.read();
-            let item = resolve(&guard.value);
-            Poll::Ready(item)
+            if let Some(state) = self.state.upgrade() {
+                let item = state.read().value.clone();
+                eprintln!("Got item");
+                Poll::Ready(Some(item))
+            } else {
+                eprintln!("No");
+                Poll::Ready(None)
+            }
         } else {
             // Store a waker
             self.waker.set_waker(cx.waker().clone());
@@ -148,18 +162,15 @@ pub struct SignalStream<S> {
     signal: S,
 }
 
-impl<S> Stream for SignalFuture<S>
+impl<S, T> Stream for SignalStream<S>
 where
-    S: Unpin + Signal,
-    S::Item: Clone,
+    S: Unpin + for<'x> Signal<'x, Item = T>,
 {
-    type Item = S::Item;
+    type Item = T;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let signal = Pin::new(&mut Pin::get_mut(self).signal);
-        signal
-            .poll_changed(cx.into(), |v| v.clone())
-            .map(|v| v.into())
+        signal.poll_changed(cx)
     }
 }
 
@@ -167,16 +178,15 @@ pub struct SignalFuture<S> {
     signal: S,
 }
 
-impl<S> Future for SignalFuture<S>
+impl<S, T> Future for SignalFuture<S>
 where
-    S: Unpin + Signal,
-    S::Item: Clone,
+    S: Unpin + for<'x> Signal<'x, Item = T>,
 {
-    type Output = S::Item;
+    type Output = Option<T>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let signal = Pin::new(&mut Pin::get_mut(self).signal);
-        signal.poll_changed(cx.into(), |v| v.clone())
+        signal.poll_changed(cx)
     }
 }
 
@@ -196,22 +206,22 @@ mod test {
 
         let task = tokio::spawn(async move {
             let value = s2.next_value().await;
-            assert_eq!(value, 4);
+            assert_eq!(value, Some(4));
         });
 
-        assert_eq!(s0.next_value().now_or_never(), Some(5));
+        assert_eq!(s0.next_value().now_or_never(), Some(Some(5)));
 
         assert_eq!(s0.next_value().now_or_never(), None);
 
         *value.write() *= 2;
 
-        assert_eq!(s0.next_value().now_or_never(), Some(10));
-        assert_eq!(s1.next_value().now_or_never(), Some(10));
+        assert_eq!(s0.next_value().now_or_never(), Some(Some(10)));
+        assert_eq!(s1.next_value().now_or_never(), Some(Some(10)));
 
         assert_eq!(s1.next_value().now_or_never(), None);
         *value.write() = 4;
 
-        assert_eq!(s1.next_value().now_or_never(), Some(4));
+        assert_eq!(s1.next_value().now_or_never(), Some(Some(4)));
 
         task.await.unwrap();
     }

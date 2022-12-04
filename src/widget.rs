@@ -1,14 +1,13 @@
-use std::sync::{Arc, MutexGuard};
+use std::sync::Arc;
 
 use flax::{child_of, Component, ComponentValue, Entity, EntityBuilder, EntityRefMut, World};
-use flume::Sender;
 use futures::{Future, StreamExt};
-use futures_signals::signal::{Signal, SignalExt};
-use parking_lot::Mutex;
-use slotmap::SlotMap;
-use tokio::runtime::Handle;
 
-use crate::{app::App, AppEvent, Effect, EffectKey};
+use crate::{
+    app::App,
+    components::abort_on_drop,
+    signal::{Effect, EffectSender, Signal, SignalEffect},
+};
 
 pub trait Widget {
     fn render(self, scope: Scope);
@@ -24,61 +23,63 @@ where
 }
 
 pub struct Scope<'a> {
-    entity: EntityRefMut<'a>,
-    app: &'a App,
+    id: Entity,
+    app: &'a mut App,
 }
 
 impl<'a> Scope<'a> {
     /// Creates a new scope
-    pub(crate) fn new(app: &'a App, world: &'a mut World, parent: Option<Entity>) -> Self {
+    pub(crate) fn spawn(app: &'a mut App, parent: Option<Entity>) -> Self {
         let mut data = Entity::builder();
         if let Some(parent) = parent {
             data.tag(child_of(parent));
         }
 
-        let id = data.spawn(world);
-        Self::reconstruct(app, world, id).unwrap()
+        let id = data.spawn(app.world_mut());
+        Self::reconstruct(app, id).unwrap()
     }
 
-    pub fn create_effect<S>(
-        &mut self,
-        signal: S,
-        mut effect: impl FnMut(Scope<'_>, S::Item) + 'static + Send,
-    ) where
-        S: 'static + Send + Signal,
-        S::Item: 'static + Send,
+    pub fn create_effect<S, T, F>(&mut self, signal: S, mut effect: F)
+    where
+        for<'x> S: 'static + Send + Sync + Signal<'x, Item = T>,
+        F: for<'x> FnMut(Scope<'_>, T) + 'static + Send + Sync,
     {
-        let id = self.entity.id();
-        self.app.create_effect(signal, |app, world, item| {
-            let s = match Self::reconstruct(app, world, id) {
-                Some(v) => v,
-                None => return false,
-            };
+        let id = self.id;
+        let effects = self.app.effects_tx().clone();
+        let signal = Arc::new(SignalEffect::new(
+            effects,
+            signal,
+            Box::new(move |app: &mut App, item: S::Item| {
+                if let Some(s) = Scope::reconstruct(app, id) {
+                    effect(s, item);
+                }
+            }),
+        )) as Arc<dyn Effect>;
 
-            effect(s, item);
-            true
-        })
+        // Abort the effect when despawning the entity
+        // self.app
+        //     .world_mut()
+        //     .entry(self.id, abort_on_drop())
+        //     .unwrap()
+        //     .or_default()
+        //     .push(Arc::downgrade(&signal));
+
+        self.app.effects_tx().send(signal).ok();
     }
 
     /// Reconstruct the scope for an entity
-    fn reconstruct(app: &'a App, world: &'a mut World, id: Entity) -> Option<Self> {
-        let rt = app.runtime();
+    fn reconstruct(app: &'a mut App, id: Entity) -> Option<Self> {
+        if !app.world().is_alive(id) {
+            return None;
+        }
 
-        let entity = world.entity_mut(id).ok()?;
-        let effects = &mut app.effects;
-        let tx = &mut app.events_tx;
-
-        Some(Self { entity, app })
+        Some(Self { id, app })
     }
 
     /// Set a component for the widget
     pub fn set<T: ComponentValue>(&mut self, component: Component<T>, value: T) -> &mut Self {
-        self.entity.set(component, value).unwrap();
+        self.app.world_mut().set(self.id, component, value).unwrap();
         self
-    }
-
-    pub fn spawn_task<F: 'static + Future<Output = ()> + Send>(&self, future: F) {
-        self.app.runtime().spawn(future);
     }
 }
 
