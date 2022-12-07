@@ -15,7 +15,7 @@ use std::{
 
 use futures::{Future, Stream};
 
-use self::{map::Map, waiter::SignalWaker};
+use self::{hold::Hold, map::Map, waiter::SignalWaker};
 
 pub trait Signal<'a> {
     type Item: 'a;
@@ -27,6 +27,14 @@ pub trait Signal<'a> {
 
     fn next_value(&mut self) -> SignalFuture<&mut Self> {
         SignalFuture { signal: self }
+    }
+
+    fn hold(self) -> Hold<Self, Self::Item>
+    where
+        Self: Sized + Unpin,
+        Self::Item: 'static,
+    {
+        Hold::new(self)
     }
 
     fn map<F, U>(self, f: F) -> Map<Self, F>

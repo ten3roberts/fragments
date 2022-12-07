@@ -13,6 +13,7 @@ pub enum SignalWaker {
     None,
     AsyncWaker(AsyncWaker),
     Callback(Arc<dyn Fn() + Send + Sync>),
+    Flag(Arc<AtomicBool>),
 }
 
 impl SignalWaker {
@@ -39,6 +40,7 @@ impl SignalWaker {
             SignalWaker::None => {}
             SignalWaker::AsyncWaker(v) => v.wake_by_ref(),
             SignalWaker::Callback(v) => v(),
+            SignalWaker::Flag(v) => v.store(true, Ordering::SeqCst),
         }
     }
 }
