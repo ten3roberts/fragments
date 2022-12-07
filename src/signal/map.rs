@@ -1,6 +1,6 @@
 use std::task::Poll;
 
-use super::Signal;
+use super::{waiter::SignalWaker, Signal};
 use pin_project::pin_project;
 
 #[pin_project]
@@ -21,7 +21,7 @@ where
 
     fn poll_changed(
         self: std::pin::Pin<&'a mut Self>,
-        cx: &mut std::task::Context<'_>,
+        cx: SignalWaker,
     ) -> Poll<Option<Self::Item>> {
         let p = self.project();
         match dbg!(p.signal.poll_changed(cx)) {

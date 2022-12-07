@@ -1,4 +1,5 @@
 mod app_signal;
+pub mod hold;
 mod map;
 mod mutable;
 mod waiter;
@@ -9,28 +10,20 @@ pub use mutable::*;
 
 use std::{
     pin::Pin,
-    sync::{Arc, Weak},
     task::{Context, Poll},
 };
 
 use futures::{Future, Stream};
-use parking_lot::{RwLock, RwLockWriteGuard};
 
-use self::{
-    map::Map,
-    waiter::{WaitList, Waiter},
-};
+use self::{map::Map, waiter::SignalWaker};
 
 pub trait Signal<'a> {
     type Item: 'a;
     // where
     //     Self: 'a;
 
-    /// Polls the signal
-    ///
-    /// When the next item is ready, `resolve` will be used to turn the temporary borrow into an
-    /// Item, E.g; by cloning.
-    fn poll_changed(self: Pin<&'a mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>>;
+    /// Polls the signal until the value changes
+    fn poll_changed(self: Pin<&'a mut Self>, waker: SignalWaker) -> Poll<Option<Self::Item>>;
 
     fn next_value(&mut self) -> SignalFuture<&mut Self> {
         SignalFuture { signal: self }
@@ -62,7 +55,7 @@ where
 {
     type Item = S::Item;
 
-    fn poll_changed(self: Pin<&'a mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+    fn poll_changed(self: Pin<&'a mut Self>, cx: SignalWaker) -> Poll<Option<Self::Item>> {
         let v = &mut **self.get_mut();
         Pin::new(v).poll_changed(cx)
     }
@@ -80,7 +73,7 @@ where
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let signal = Pin::new(&mut Pin::get_mut(self).signal);
-        signal.poll_changed(cx)
+        signal.poll_changed(SignalWaker::from_cx(cx))
     }
 }
 
@@ -96,7 +89,7 @@ where
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let signal = Pin::new(&mut Pin::get_mut(self).signal);
-        signal.poll_changed(cx)
+        signal.poll_changed(SignalWaker::from_cx(cx))
     }
 }
 

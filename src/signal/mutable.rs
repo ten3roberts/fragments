@@ -1,13 +1,13 @@
 use std::{
     pin::Pin,
     sync::{Arc, Weak},
-    task::{Context, Poll},
+    task::Poll,
 };
 
 use parking_lot::{RwLock, RwLockWriteGuard};
 
 use super::{
-    waiter::{WaitList, Waiter},
+    waiter::{SignalWaker, WaitList, Waiter},
     Signal,
 };
 
@@ -84,7 +84,7 @@ where
 {
     type Item = T;
 
-    fn poll_changed(self: Pin<&'a mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+    fn poll_changed(self: Pin<&'a mut Self>, waker: SignalWaker) -> Poll<Option<Self::Item>> {
         eprintln!("Polling changed");
         if let Some(state) = self.state.upgrade() {
             if self.waker.take_changed() {
@@ -93,7 +93,7 @@ where
                 Poll::Ready(Some(item))
             } else {
                 // Store a waker
-                self.waker.set_waker(cx.waker().clone());
+                self.waker.set_waker(waker.clone());
                 Poll::Pending
             }
         } else {

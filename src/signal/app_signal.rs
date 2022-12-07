@@ -4,15 +4,15 @@ use std::{
         atomic::{AtomicU8, Ordering},
         Arc,
     },
-    task::{Context, Poll},
+    task::Poll,
 };
 
 use atomic_refcell::AtomicRefCell;
 use flume::{Receiver, Sender};
-use futures::task::{waker_ref, ArcWake};
+use futures::task::ArcWake;
 use pin_project::pin_project;
 
-use crate::app::App;
+use crate::{app::App, signal::waiter::SignalWaker};
 
 use super::Signal;
 
@@ -47,34 +47,6 @@ impl<S, F> SignalEffect<S, F> {
     }
 }
 
-impl<S, F> ArcWake for SignalEffect<S, F>
-where
-    S: 'static + Send + Sync + for<'x> Signal<'x>,
-    F: 'static + Send + Sync + for<'x> FnMut(&mut App, <S as Signal<'x>>::Item),
-{
-    fn wake_by_ref(arc_self: &Arc<Self>) {
-        eprintln!("Waking effect");
-        if arc_self
-            .state
-            .compare_exchange(
-                STATE_PENDING,
-                STATE_READY,
-                Ordering::Acquire,
-                Ordering::Relaxed,
-            )
-            .is_ok()
-        {
-            eprintln!("Enqueueing task");
-            arc_self
-                .queue
-                .send(arc_self.clone() as Arc<dyn Effect>)
-                .ok();
-        } else {
-            eprintln!("Already enqueued or aborted")
-        }
-    }
-}
-
 impl<S, F> Effect for SignalEffect<S, F>
 where
     S: 'static + Send + Sync + for<'x> Signal<'x>,
@@ -92,8 +64,25 @@ where
             .is_ok()
         {
             eprintln!("Effect ready");
-            let waker = waker_ref(&self);
-            let mut cx = Context::from_waker(&waker);
+            let _self = self.clone();
+
+            let callback = Arc::new(move || {
+                if _self
+                    .state
+                    .compare_exchange(
+                        STATE_PENDING,
+                        STATE_READY,
+                        Ordering::Acquire,
+                        Ordering::Relaxed,
+                    )
+                    .is_ok()
+                {
+                    eprintln!("Enqueueing task");
+                    _self.queue.send(_self.clone() as Arc<dyn Effect>).ok();
+                } else {
+                    eprintln!("Already enqueued or aborted")
+                }
+            });
 
             {
                 let signal = self.signal.borrow_mut();
@@ -101,7 +90,10 @@ where
                 // The signal is never moved or replaced
                 let mut signal = unsafe { Pin::new_unchecked(signal) };
                 {
-                    while let Poll::Ready(Some(v)) = signal.as_mut().poll_changed(&mut cx) {
+                    while let Poll::Ready(Some(v)) = signal
+                        .as_mut()
+                        .poll_changed(SignalWaker::Callback(callback.clone()))
+                    {
                         (self.handler.borrow_mut())(app, v);
                     }
                 }
