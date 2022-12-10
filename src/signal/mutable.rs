@@ -4,7 +4,7 @@ use std::{
     task::Poll,
 };
 
-use parking_lot::{RwLock, RwLockWriteGuard};
+use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use super::{
     waiter::{SignalWaker, WaitList, Waiter},
@@ -55,6 +55,18 @@ impl<'a, T> Drop for MutableWriteGuard<'a, T> {
     }
 }
 
+pub struct MutableReadGuard<'a, T> {
+    inner: RwLockReadGuard<'a, MutableInner<T>>,
+}
+
+impl<'a, T> std::ops::Deref for MutableReadGuard<'a, T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner.value
+    }
+}
+
 struct MutableInner<T> {
     value: T,
     wakers: WaitList,
@@ -69,6 +81,17 @@ impl<T> Mutable<T> {
         MutableSignal {
             waker,
             state: Arc::downgrade(&self.inner),
+        }
+    }
+
+    pub fn signal_ref(&self) -> MutableSignalRef<T> {
+        let waker = Arc::new(Waiter::new(true));
+        let mut inner = self.inner.write();
+        inner.wakers.push(Arc::downgrade(&waker));
+
+        MutableSignalRef {
+            waker,
+            state: self.inner.clone(),
         }
     }
 }
@@ -93,12 +116,40 @@ where
                 Poll::Ready(Some(item))
             } else {
                 // Store a waker
-                self.waker.set_waker(waker.clone());
+                self.waker.set_waker(waker);
                 Poll::Pending
             }
         } else {
             eprintln!("No");
             Poll::Ready(None)
+        }
+    }
+}
+
+pub struct MutableSignalRef<T> {
+    waker: Arc<Waiter>,
+    state: Arc<RwLock<MutableInner<T>>>,
+}
+
+impl<'a, T> Signal<'a> for MutableSignalRef<T>
+where
+    T: 'a,
+{
+    type Item = MutableReadGuard<'a, T>;
+
+    fn poll_changed(self: Pin<&'a mut Self>, waker: SignalWaker) -> Poll<Option<Self::Item>> {
+        eprintln!("Polling changed");
+        let _self = self.get_mut();
+        if _self.waker.take_changed() {
+            let item = MutableReadGuard {
+                inner: _self.state.read(),
+            };
+
+            Poll::Ready(Some(item))
+        } else {
+            // Store a waker
+            _self.waker.set_waker(waker);
+            Poll::Pending
         }
     }
 }

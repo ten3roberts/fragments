@@ -59,18 +59,18 @@ mod test {
 
     #[test]
     fn hold() {
-        let value = Mutable::new("Hello, World!".to_string());
+        // let value = Mutable::new("Hello, World!".to_string());
 
-        let signal = value.signal().map(|v| v.to_lowercase());
+        // let signal = value.signal().map(|v| v.to_lowercase());
 
-        let mut sink = signal.hold();
+        // let mut sink = signal.hold();
 
-        assert_eq!(sink.get(), Some(&"hello, world!".to_string()));
-        assert_eq!(sink.get(), Some(&"hello, world!".to_string()));
-        *value.write() = "Foo".to_string();
+        // assert_eq!(sink.get(), Some(&"hello, world!".to_string()));
+        // assert_eq!(sink.get(), Some(&"hello, world!".to_string()));
+        // *value.write() = "Foo".to_string();
 
-        assert_eq!(sink.get(), Some(&"foo".to_string()));
-        drop(value);
-        assert_eq!(sink.get(), None);
+        // assert_eq!(sink.get(), Some(&"foo".to_string()));
+        // drop(value);
+        // assert_eq!(sink.get(), None);
     }
 }

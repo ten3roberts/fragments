@@ -41,8 +41,8 @@ impl<'a> Scope<'a> {
 
     pub fn create_effect<S, T, F>(&mut self, signal: S, mut effect: F)
     where
-        for<'x> S: 'static + Send + Sync + Signal<'x, Item = T>,
-        F: for<'x> FnMut(Scope<'_>, T) + 'static + Send + Sync,
+        S: 'static + Send + Sync + for<'x> Signal<'x, Item = T>,
+        F: FnMut(Scope<'_>, T) + 'static + Send + Sync,
     {
         let id = self.id;
         let effects = self.app.effects_tx().clone();

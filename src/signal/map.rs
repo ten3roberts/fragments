@@ -13,7 +13,6 @@ pub struct Map<S, F> {
 impl<'a, S, F, U> Signal<'a> for Map<S, F>
 where
     S: Signal<'a>,
-    for<'x> <S as Signal<'a>>::Item: std::fmt::Debug,
     F: FnMut(S::Item) -> U,
     U: 'a,
 {
@@ -24,7 +23,7 @@ where
         cx: SignalWaker,
     ) -> Poll<Option<Self::Item>> {
         let p = self.project();
-        match dbg!(p.signal.poll_changed(cx)) {
+        match p.signal.poll_changed(cx) {
             Poll::Ready(Some(v)) => Poll::Ready(Some((p.f)(v))),
             Poll::Ready(None) => Poll::Ready(None),
             Poll::Pending => Poll::Pending,
@@ -40,11 +39,33 @@ mod test {
 
     use super::*;
 
-    #[tokio::test]
-    async fn mutable() {
+    #[test]
+    fn mapped() {
         let value = Mutable::new(5);
 
         let mut s0 = value.signal().map(|v| v.to_string());
+        assert_eq!(
+            s0.by_ref().next_value().now_or_never(),
+            Some(Some("5".to_string()))
+        );
+        assert_eq!(s0.by_ref().next_value().now_or_never(), None);
+        *value.write() = 7;
+
+        assert_eq!(
+            s0.by_ref().next_value().now_or_never(),
+            Some(Some("7".to_string()))
+        );
+        drop(value);
+
+        assert_eq!(s0.by_ref().next_value().now_or_never(), Some(None));
+    }
+
+    #[test]
+    fn mapped_ref() {
+        let value = Mutable::new(5);
+
+        let mut s0 = value.signal_ref().map(|v| v.to_string());
+
         assert_eq!(s0.next_value().now_or_never(), Some(Some("5".to_string())));
         assert_eq!(s0.next_value().now_or_never(), None);
         *value.write() = 7;

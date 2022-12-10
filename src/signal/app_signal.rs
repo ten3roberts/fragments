@@ -9,7 +9,6 @@ use std::{
 
 use atomic_refcell::AtomicRefCell;
 use flume::{Receiver, Sender};
-use futures::task::ArcWake;
 use pin_project::pin_project;
 
 use crate::{app::App, signal::waiter::SignalWaker};

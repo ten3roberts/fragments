@@ -4,9 +4,10 @@ mod map;
 mod mutable;
 mod waiter;
 
-pub use app_signal::*;
+pub(crate) use app_signal::*;
 pub use map::*;
 pub use mutable::*;
+use pin_project::pin_project;
 
 use std::{
     pin::Pin,
@@ -19,8 +20,6 @@ use self::{hold::Hold, map::Map, waiter::SignalWaker};
 
 pub trait Signal<'a> {
     type Item: 'a;
-    // where
-    //     Self: 'a;
 
     /// Polls the signal until the value changes
     fn poll_changed(self: Pin<&'a mut Self>, waker: SignalWaker) -> Poll<Option<Self::Item>>;
@@ -39,8 +38,9 @@ pub trait Signal<'a> {
 
     fn map<F, U>(self, f: F) -> Map<Self, F>
     where
-        F: FnMut(Self::Item) -> U,
         Self: Sized,
+        F: for<'x> FnMut(<Self as Signal<'x>>::Item) -> U,
+        U: 'a,
     {
         Map { signal: self, f }
     }
@@ -85,19 +85,21 @@ where
     }
 }
 
+#[pin_project]
 pub struct SignalFuture<S> {
+    #[pin]
     signal: S,
 }
 
 impl<S, T> Future for SignalFuture<S>
 where
-    S: Unpin + for<'x> Signal<'x, Item = T>,
+    S: for<'x> Signal<'x, Item = T>,
 {
     type Output = Option<T>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let signal = Pin::new(&mut Pin::get_mut(self).signal);
-        signal.poll_changed(SignalWaker::from_cx(cx))
+        let p = self.project();
+        p.signal.poll_changed(SignalWaker::from_cx(cx))
     }
 }
 
