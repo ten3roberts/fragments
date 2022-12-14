@@ -4,46 +4,44 @@ use std::{
 };
 
 use futures::{Stream, StreamExt};
-use parking_lot::Mutex;
+use pin_project::pin_project;
 
 use crate::App;
 
 use super::Effect;
 
 /// An effect which executes the provided function for each item in the stream
+#[pin_project]
 pub struct StreamEffect<S, F> {
-    stream: Mutex<Option<S>>,
-    func: Mutex<F>,
+    #[pin]
+    stream: S,
+    func: F,
 }
 
 impl<S, F> StreamEffect<S, F> {
     pub fn new(stream: S, func: F) -> Self {
-        Self {
-            stream: Mutex::new(Some(stream)),
-            func: Mutex::new(func),
-        }
+        Self { stream, func }
     }
 }
 
 impl<S, F> Effect for StreamEffect<S, F>
 where
-    S: 'static + Send + Unpin + Stream,
-    F: 'static + Send + FnMut(&mut App, S::Item),
+    S: 'static + Send + Sync + Stream,
+    F: 'static + Send + Sync + FnMut(&mut App, S::Item),
 {
     fn poll_effect(self: Pin<&mut Self>, app: &mut crate::App, cx: &mut Context<'_>) {
+        let p = self.project();
         // Project and lock
         eprintln!("Effect ready");
 
-        let mut stream = self.stream.lock();
-        if let Some(stream) = &mut *stream {
-            let mut func = self.func.lock();
-            while let Poll::Ready(Some(item)) = stream.poll_next_unpin(cx) {
-                (func)(app, item)
-            }
+        let mut stream = p.stream;
+        let func = p.func;
+        while let Poll::Ready(Some(item)) = stream.poll_next_unpin(cx) {
+            (func)(app, item)
         }
     }
 
     fn abort(&self) {
-        *self.stream.lock() = None
+        todo!()
     }
 }

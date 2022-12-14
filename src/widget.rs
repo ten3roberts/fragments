@@ -41,10 +41,10 @@ impl<'a> Scope<'a> {
     pub fn create_effect<S, T, F>(&mut self, signal: S, mut effect: F)
     where
         S: 'static + Send + Sync + for<'x> Signal<'x, Item = T>,
-        F: FnMut(Scope<'_>, T) + 'static + Send + Sync,
+        F: 'static + FnMut(Scope<'_>, T) + Send + Sync,
     {
         let id = self.id;
-        let signal = SignalEffect::new(Box::pin(signal), move |app: &mut App, item: S::Item| {
+        let signal = SignalEffect::new(signal, move |app: &mut App, item: S::Item| {
             if let Some(s) = Scope::reconstruct(app, id) {
                 effect(s, item);
             }

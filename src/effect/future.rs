@@ -5,43 +5,44 @@ use std::{
 };
 
 use futures::{Future, FutureExt};
-use parking_lot::Mutex;
+use pin_project::pin_project;
 
 use crate::App;
 
 use super::{Effect, EffectSender};
 
 /// An effect which run the future to completion, and executes the provided function when finished
+#[pin_project]
 pub struct FutureEffect<Fut, F>
 where
     Fut: Future,
     F: FnOnce(&mut App, Fut::Output),
 {
-    fut: Mutex<Option<Fut>>,
-    func: Mutex<Option<F>>,
+    #[pin]
+    fut: Fut,
+    func: Option<F>,
     queue: EffectSender,
     ready: AtomicBool,
 }
 
 impl<Fut, F> Effect for FutureEffect<Fut, F>
 where
-    Fut: 'static + Send + Unpin + Future,
-    F: 'static + Send + FnOnce(&mut App, Fut::Output),
+    Fut: 'static + Send + Sync + Future,
+    F: 'static + Send + Sync + FnOnce(&mut App, Fut::Output),
 {
     fn poll_effect(self: Pin<&mut Self>, app: &mut App, cx: &mut Context<'_>) {
         // Project and lock
         eprintln!("Effect ready");
 
-        let mut fut = self.fut.lock();
-        if let Some(fut) = &mut *fut {
-            while let Poll::Ready(item) = fut.poll_unpin(cx) {
-                let func = self.func.lock().take().unwrap();
-                (func)(app, item)
-            }
+        let p = self.project();
+        let mut fut = p.fut;
+        while let Poll::Ready(item) = fut.poll_unpin(cx) {
+            let func = p.func.take().unwrap();
+            (func)(app, item)
         }
     }
 
     fn abort(&self) {
-        *self.fut.lock() = None
+        todo!()
     }
 }
