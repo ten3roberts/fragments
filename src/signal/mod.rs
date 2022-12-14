@@ -8,7 +8,7 @@ pub use mutable::*;
 use pin_project::pin_project;
 
 use std::{
-    ops::Deref,
+    ops::{Deref, DerefMut},
     pin::Pin,
     task::{Context, Poll},
 };
@@ -102,6 +102,17 @@ pub struct SignalStream<S> {
     signal: S,
 }
 
+impl<'a, S> Signal<'a> for Pin<Box<S>>
+where
+    S: Signal<'a>,
+{
+    type Item = S::Item;
+
+    fn poll_changed(self: Pin<&'a mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let s = self.get_mut().as_mut();
+        s.poll_changed(cx)
+    }
+}
 impl<S, T> Stream for SignalStream<S>
 where
     S: Unpin + for<'x> Signal<'x, Item = T>,

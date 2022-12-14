@@ -3,10 +3,8 @@ use std::sync::Arc;
 use flax::{child_of, Component, ComponentValue, Entity, EntityBuilder, EntityRef, World};
 
 use crate::{
-    app::{
-        effect::{Effect, SignalEffect},
-        App,
-    },
+    app::App,
+    effect::{Effect, SignalEffect},
     signal::Signal,
 };
 
@@ -46,16 +44,11 @@ impl<'a> Scope<'a> {
         F: FnMut(Scope<'_>, T) + 'static + Send + Sync,
     {
         let id = self.id;
-        let effects = self.app.effects_tx().clone();
-        let signal = Arc::new(SignalEffect::new(
-            effects,
-            signal,
-            Box::new(move |app: &mut App, item: S::Item| {
-                if let Some(s) = Scope::reconstruct(app, id) {
-                    effect(s, item);
-                }
-            }),
-        )) as Arc<dyn Effect>;
+        let signal = SignalEffect::new(Box::pin(signal), move |app: &mut App, item: S::Item| {
+            if let Some(s) = Scope::reconstruct(app, id) {
+                effect(s, item);
+            }
+        });
 
         // Abort the effect when despawning the entity
         // self.app
@@ -65,7 +58,9 @@ impl<'a> Scope<'a> {
         //     .or_default()
         //     .push(Arc::downgrade(&signal));
 
-        self.app.effects_tx().send(signal).ok();
+        self.app.run_effect(signal);
+
+        // self.app.effects_tx().send(signal).ok();
     }
 
     /// Reconstruct the scope for an entity

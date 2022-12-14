@@ -1,4 +1,4 @@
-use crate::{error::Error, Scope, Widget};
+use crate::{effect::EffectExecutor, error::Error, Scope, Widget};
 use flax::World;
 
 use futures::StreamExt;
@@ -6,8 +6,7 @@ use slotmap::new_key_type;
 use std::sync::Arc;
 use tokio::runtime::Runtime;
 
-use self::effect::{Effect, EffectReceiver, EffectSender};
-pub mod effect;
+use crate::effect::{Effect, EffectReceiver, EffectSender};
 
 new_key_type! { pub struct EffectKey; }
 
@@ -60,7 +59,7 @@ impl App {
 
     pub fn update(&mut self) {
         while let Ok(effect) = self.effects_rx.try_recv() {
-            effect.poll_effect(self);
+            effect.run(self);
         }
     }
 
@@ -74,14 +73,19 @@ impl App {
             let mut pending_effects = self.effects_rx.clone().into_stream();
             eprintln!("Waiting for pending effects");
             while let Some(effect) = pending_effects.next().await {
-                effect.poll_effect(&mut self);
+                effect.run(&mut self);
             }
         });
         Ok(())
     }
 
-    pub(crate) fn run_effect<E: Effect>(&self, effect: Arc<E>) {
-        self.effects_tx.send(effect).ok();
+    pub(crate) fn run_effect<E: Effect>(&self, effect: E) {
+        self.effects_tx
+            .send(Arc::new(EffectExecutor::new(
+                Box::pin(effect),
+                self.effects_tx.clone(),
+            )))
+            .ok();
     }
 
     pub(crate) fn effects_tx(&self) -> &EffectSender {

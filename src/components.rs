@@ -2,7 +2,7 @@ use std::sync::{Arc, Weak};
 
 use flax::*;
 
-use crate::app::effect::Effect;
+use crate::effect::Effect;
 
 pub(crate) struct AbortOnDrop {
     effects: Vec<Arc<dyn Effect>>,

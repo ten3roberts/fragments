@@ -23,8 +23,8 @@ fn main() -> eyre::Result<()> {
                 s.set(text(), counter);
             });
 
-            s.create_effect(counter.signal(), |mut s, _| {
-                eprintln!("App: {:#?}", s.app_mut());
+            s.create_effect(counter.signal(), |_, _| {
+                eprintln!("counter changed");
             });
 
             tokio::spawn(async move {
