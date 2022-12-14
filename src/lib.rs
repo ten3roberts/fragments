@@ -1,5 +1,5 @@
 mod app;
-mod components;
+pub mod components;
 mod error;
 pub mod signal;
 mod widget;

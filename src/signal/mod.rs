@@ -1,15 +1,14 @@
-mod app_signal;
 pub mod hold;
 mod map;
 mod mutable;
-mod waiter;
+pub mod waiter;
 
-pub(crate) use app_signal::*;
 pub use map::*;
 pub use mutable::*;
 use pin_project::pin_project;
 
 use std::{
+    ops::Deref,
     pin::Pin,
     task::{Context, Poll},
 };
@@ -49,6 +48,14 @@ pub trait Signal<'a> {
         self
     }
 
+    /// Convert the values into owned values, by deref and cloning
+    fn cloned(self) -> Cloned<Self>
+    where
+        Self: Sized,
+    {
+        Cloned { signal: self }
+    }
+
     fn into_stream(self) -> SignalStream<Self>
     where
         Self: Sized,
@@ -66,6 +73,28 @@ where
     fn poll_changed(self: Pin<&'a mut Self>, cx: SignalWaker) -> Poll<Option<Self::Item>> {
         let v = &mut **self.get_mut();
         Pin::new(v).poll_changed(cx)
+    }
+}
+
+#[pin_project]
+pub struct Cloned<S> {
+    #[pin]
+    signal: S,
+}
+
+impl<'a, S, U, T> Signal<'a> for Cloned<S>
+where
+    S: Signal<'a, Item = U>,
+    U: Deref<Target = T>,
+    T: 'static + Clone,
+{
+    type Item = T;
+
+    fn poll_changed(self: Pin<&'a mut Self>, waker: SignalWaker) -> Poll<Option<Self::Item>> {
+        self.project()
+            .signal
+            .poll_changed(waker)
+            .map(|v| v.map(|v| v.deref().clone()))
     }
 }
 

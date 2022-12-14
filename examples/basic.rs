@@ -1,27 +1,40 @@
 use std::time::Duration;
 
+use eyre::Context;
+use flax::name;
 use fragments::{
+    components::text,
     signal::{self, Signal},
     App, Scope,
 };
-use tokio::time::{interval, sleep};
 
-fn main() {
-    let app = App::new().run(|mut s: Scope| {
-        let counter = signal::Mutable::new(0);
+use tokio::time::interval;
 
-        let mapped = counter.signal_ref().map(|v| v.to_string());
-        s.create_effect(mapped, |_: Scope<'_>, counter| {
-            eprintln!("Counter: {:?}", counter);
-        });
+fn main() -> eyre::Result<()> {
+    color_eyre::install()?;
+    App::new()
+        .run(|mut s: Scope| {
+            s.set(name(), "Root".into());
+            let counter = signal::Mutable::new(0);
 
-        tokio::spawn(async move {
-            let mut interval = interval(Duration::from_millis(1000));
-            loop {
-                interval.tick().await;
-                eprintln!("Writing");
-                *counter.write() += 1;
-            }
-        });
-    });
+            let mapped = counter.signal_ref().map(|v| v.to_string());
+            s.create_effect(mapped, |mut s, counter| {
+                eprintln!("Counter: {:?}", counter);
+                s.set(text(), counter);
+            });
+
+            s.create_effect(counter.signal(), |mut s, _| {
+                eprintln!("App: {:#?}", s.app_mut());
+            });
+
+            tokio::spawn(async move {
+                let mut interval = interval(Duration::from_millis(1000));
+                loop {
+                    interval.tick().await;
+                    eprintln!("Writing");
+                    *counter.write() += 1;
+                }
+            });
+        })
+        .wrap_err("Failed to run app")
 }

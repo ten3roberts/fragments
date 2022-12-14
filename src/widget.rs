@@ -1,12 +1,15 @@
 use std::sync::Arc;
 
-use flax::{child_of, Component, ComponentValue, Entity, EntityBuilder, EntityRefMut, World};
-use futures::{Future, StreamExt};
+use flax::{
+    child_of, Component, ComponentValue, Entity, EntityBuilder, EntityRef, EntityRefMut, World,
+};
 
 use crate::{
-    app::App,
-    components::abort_on_drop,
-    signal::{Effect, EffectSender, Signal, SignalEffect},
+    app::{
+        effect::{Effect, SignalEffect},
+        App,
+    },
+    signal::Signal,
 };
 
 pub trait Widget {
@@ -80,6 +83,18 @@ impl<'a> Scope<'a> {
     pub fn set<T: ComponentValue>(&mut self, component: Component<T>, value: T) -> &mut Self {
         self.app.world_mut().set(self.id, component, value).unwrap();
         self
+    }
+
+    pub fn entity_ref(&mut self) -> EntityRef {
+        self.app.world_mut().entity(self.id).unwrap()
+    }
+
+    pub fn app_mut(&mut self) -> &mut App {
+        self.app
+    }
+
+    pub fn app(&self) -> &&'a mut App {
+        &self.app
     }
 }
 

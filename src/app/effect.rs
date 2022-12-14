@@ -11,9 +11,10 @@ use atomic_refcell::AtomicRefCell;
 use flume::{Receiver, Sender};
 use pin_project::pin_project;
 
-use crate::{app::App, signal::waiter::SignalWaker};
-
-use super::Signal;
+use crate::{
+    app::App,
+    signal::{waiter::SignalWaker, Signal},
+};
 
 /// A `task` which runs on the world
 pub(crate) trait Effect: 'static + Send + Sync {

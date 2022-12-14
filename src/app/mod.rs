@@ -1,14 +1,13 @@
-use crate::{
-    error::Error,
-    signal::{Effect, EffectReceiver, EffectSender, Signal, SignalEffect},
-    Scope, Widget,
-};
+use crate::{error::Error, Scope, Widget};
 use flax::World;
 use flume::{Receiver, Sender};
 use futures::StreamExt;
 use slotmap::{new_key_type, SlotMap};
 use std::sync::Arc;
 use tokio::runtime::{Handle, Runtime};
+
+use self::effect::{Effect, EffectReceiver, EffectSender};
+pub mod effect;
 
 new_key_type! { pub struct EffectKey; }
 
@@ -36,6 +35,7 @@ new_key_type! { pub struct EffectKey; }
 //     }
 // }
 
+#[derive(Debug)]
 pub struct App {
     world: World,
     effects_tx: EffectSender,

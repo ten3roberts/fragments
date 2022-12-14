@@ -156,7 +156,6 @@ where
     type Item = T;
 
     fn poll_changed(self: Pin<&'a mut Self>, waker: SignalWaker) -> Poll<Option<Self::Item>> {
-        eprintln!("Polling changed");
         if let Some(state) = self.state.upgrade() {
             if self.waker.take_changed() {
                 let item = state.value.read().clone();
@@ -186,7 +185,6 @@ where
     type Item = MutableReadGuard<'a, T>;
 
     fn poll_changed(self: Pin<&'a mut Self>, waker: SignalWaker) -> Poll<Option<Self::Item>> {
-        eprintln!("Polling changed");
         // let _self = self.get_mut();
         let _self = self.get_mut();
 
@@ -232,11 +230,7 @@ mod test {
         );
 
         assert_eq!(
-            signal_ref
-                .by_ref()
-                .map(|v| v.clone())
-                .next_value()
-                .now_or_never(),
+            signal_ref.by_ref().cloned().next_value().now_or_never(),
             Some(Some("foo".to_string()))
         );
 
