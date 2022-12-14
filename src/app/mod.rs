@@ -1,10 +1,10 @@
 use crate::{error::Error, Scope, Widget};
 use flax::World;
-use flume::{Receiver, Sender};
+
 use futures::StreamExt;
-use slotmap::{new_key_type, SlotMap};
+use slotmap::new_key_type;
 use std::sync::Arc;
-use tokio::runtime::{Handle, Runtime};
+use tokio::runtime::Runtime;
 
 use self::effect::{Effect, EffectReceiver, EffectSender};
 pub mod effect;

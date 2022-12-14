@@ -5,13 +5,13 @@ use std::{
         atomic::{AtomicUsize, Ordering},
         Arc, Weak,
     },
-    task::Poll,
+    task::{Context, Poll},
 };
 
 use parking_lot::{self, Mutex, MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use super::{
-    waiter::{SignalWaker, WaitList, Waiter},
+    waiter::{WaitList, Waiter},
     Signal,
 };
 
@@ -124,7 +124,7 @@ impl<T> Mutable<T> {
         self.push_waiter(Arc::downgrade(&waker));
 
         MutableSignal {
-            waker,
+            waiter: waker,
             state: Arc::downgrade(&self.inner),
         }
     }
@@ -145,7 +145,7 @@ impl<T> Mutable<T> {
 }
 
 pub struct MutableSignal<T> {
-    waker: Arc<Waiter>,
+    waiter: Arc<Waiter>,
     state: Weak<MutableInner<T>>,
 }
 
@@ -155,14 +155,14 @@ where
 {
     type Item = T;
 
-    fn poll_changed(self: Pin<&'a mut Self>, waker: SignalWaker) -> Poll<Option<Self::Item>> {
+    fn poll_changed(self: Pin<&'a mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         if let Some(state) = self.state.upgrade() {
-            if self.waker.take_changed() {
+            if self.waiter.take_changed() {
                 let item = state.value.read().clone();
                 Poll::Ready(Some(item))
             } else {
                 // Store a waker
-                self.waker.set_waker(waker);
+                self.waiter.set_waker(cx.waker().clone());
                 Poll::Pending
             }
         } else {
@@ -184,7 +184,7 @@ where
 {
     type Item = MutableReadGuard<'a, T>;
 
-    fn poll_changed(self: Pin<&'a mut Self>, waker: SignalWaker) -> Poll<Option<Self::Item>> {
+    fn poll_changed(self: Pin<&'a mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         // let _self = self.get_mut();
         let _self = self.get_mut();
 
@@ -205,7 +205,7 @@ where
             Poll::Ready(Some(item))
         } else {
             // Store a waker
-            _self.waker.set_waker(waker);
+            _self.waker.set_waker(cx.waker().clone());
             Poll::Pending
         }
     }

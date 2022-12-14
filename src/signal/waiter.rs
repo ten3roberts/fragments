@@ -1,54 +1,17 @@
 use std::{
     sync::{
         atomic::{AtomicBool, Ordering},
-        Arc, Weak,
+        Weak,
     },
-    task::{Context, Wake, Waker as AsyncWaker},
+    task::Waker as AsyncWaker,
 };
 
 use parking_lot::Mutex;
 
-#[derive(Clone)]
-pub enum SignalWaker {
-    None,
-    AsyncWaker(AsyncWaker),
-    Callback(Arc<dyn Fn() + Send + Sync>),
-    Flag(Arc<AtomicBool>),
-}
-
-impl SignalWaker {
-    pub fn from_cx(cx: &Context<'_>) -> Self {
-        Self::AsyncWaker(cx.waker().clone())
-    }
-}
-
-impl Default for SignalWaker {
-    fn default() -> Self {
-        Self::None
-    }
-}
-
-impl From<AsyncWaker> for SignalWaker {
-    fn from(v: AsyncWaker) -> Self {
-        Self::AsyncWaker(v)
-    }
-}
-
-impl SignalWaker {
-    fn wake(&self) {
-        match self {
-            SignalWaker::None => {}
-            SignalWaker::AsyncWaker(v) => v.wake_by_ref(),
-            SignalWaker::Callback(v) => v(),
-            SignalWaker::Flag(v) => v.store(true, Ordering::SeqCst),
-        }
-    }
-}
-
 pub(crate) struct Waiter {
     changed: AtomicBool,
     // Method to use to signal the change
-    waker: Mutex<SignalWaker>,
+    waker: Mutex<Option<AsyncWaker>>,
 }
 
 impl Waiter {
@@ -67,13 +30,15 @@ impl Waiter {
             .is_ok()
     }
 
-    pub fn set_waker(&self, waker: SignalWaker) {
-        *self.waker.lock() = waker;
+    pub fn set_waker(&self, waker: AsyncWaker) {
+        *self.waker.lock() = Some(waker);
     }
 
     pub fn wake(&self) {
         self.changed.store(true, Ordering::SeqCst);
-        self.waker.lock().wake();
+        if let Some(waker) = &*self.waker.lock() {
+            waker.wake_by_ref()
+        }
     }
 }
 

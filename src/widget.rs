@@ -1,8 +1,6 @@
 use std::sync::Arc;
 
-use flax::{
-    child_of, Component, ComponentValue, Entity, EntityBuilder, EntityRef, EntityRefMut, World,
-};
+use flax::{child_of, Component, ComponentValue, Entity, EntityBuilder, EntityRef, World};
 
 use crate::{
     app::{

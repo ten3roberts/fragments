@@ -1,10 +1,11 @@
 use std::{
     pin::Pin,
-    sync::{atomic::AtomicBool, Arc},
-    task::Poll,
+    task::{Context, Poll},
 };
 
-use super::{waiter::SignalWaker, Signal};
+use futures::task::noop_waker_ref;
+
+use super::Signal;
 
 #[derive(Debug, Clone)]
 pub struct Hold<S, T> {
@@ -34,7 +35,7 @@ where
     {
         let signal = Pin::new(&mut self.signal);
 
-        match signal.poll_changed(SignalWaker::None) {
+        match signal.poll_changed(&mut Context::from_waker(noop_waker_ref())) {
             Poll::Ready(Some(v)) => self.value = Some(v),
             Poll::Ready(None) => {
                 self.is_closed = true;

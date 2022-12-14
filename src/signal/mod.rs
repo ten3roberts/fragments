@@ -1,7 +1,7 @@
 pub mod hold;
 mod map;
 mod mutable;
-pub mod waiter;
+mod waiter;
 
 pub use map::*;
 pub use mutable::*;
@@ -15,13 +15,13 @@ use std::{
 
 use futures::{Future, Stream};
 
-use self::{hold::Hold, map::Map, waiter::SignalWaker};
+use self::{hold::Hold, map::Map};
 
 pub trait Signal<'a> {
     type Item: 'a;
 
     /// Polls the signal until the value changes
-    fn poll_changed(self: Pin<&'a mut Self>, waker: SignalWaker) -> Poll<Option<Self::Item>>;
+    fn poll_changed(self: Pin<&'a mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>>;
 
     fn next_value(&mut self) -> SignalFuture<&mut Self> {
         SignalFuture { signal: self }
@@ -70,7 +70,7 @@ where
 {
     type Item = S::Item;
 
-    fn poll_changed(self: Pin<&'a mut Self>, cx: SignalWaker) -> Poll<Option<Self::Item>> {
+    fn poll_changed(self: Pin<&'a mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let v = &mut **self.get_mut();
         Pin::new(v).poll_changed(cx)
     }
@@ -90,10 +90,10 @@ where
 {
     type Item = T;
 
-    fn poll_changed(self: Pin<&'a mut Self>, waker: SignalWaker) -> Poll<Option<Self::Item>> {
+    fn poll_changed(self: Pin<&'a mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         self.project()
             .signal
-            .poll_changed(waker)
+            .poll_changed(cx)
             .map(|v| v.map(|v| v.deref().clone()))
     }
 }
@@ -110,7 +110,7 @@ where
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let signal = Pin::new(&mut Pin::get_mut(self).signal);
-        signal.poll_changed(SignalWaker::from_cx(cx))
+        signal.poll_changed(cx)
     }
 }
 
@@ -128,7 +128,7 @@ where
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let p = self.project();
-        p.signal.poll_changed(SignalWaker::from_cx(cx))
+        p.signal.poll_changed(cx)
     }
 }
 
