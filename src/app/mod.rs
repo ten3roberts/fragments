@@ -85,7 +85,7 @@ impl App {
     /// Spawns the effect into the app.
     ///
     /// Returns a handle which will control the effect
-    pub(crate) fn spawn_effect<E: 'static + Effect<Output = ()> + Send>(
+    pub(crate) fn spawn_effect<E: 'static + Send + Effect<App>>(
         &self,
         effect: E,
     ) -> TaskHandle<()> {

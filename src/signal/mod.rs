@@ -65,7 +65,7 @@ pub trait Signal<'a> {
     }
 }
 
-/// Convert a future to a signal which yields one item
+/// Convert a future into a signal which yields one item
 pub fn from_future<F>(future: F) -> FromFuture<F> {
     FromFuture { fut: Some(future) }
 }
@@ -97,7 +97,7 @@ where
     }
 }
 
-/// Convert a stream to a signal
+/// Convert a stream into a signal
 pub fn from_stream<S: Stream>(stream: S) -> FromStream<S> {
     FromStream {
         stream: stream.fuse(),

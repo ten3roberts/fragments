@@ -6,8 +6,6 @@ use std::{
 use futures::Stream;
 use pin_project::pin_project;
 
-use crate::App;
-
 use super::Effect;
 
 /// An effect which executes the provided function for each item in the stream
@@ -24,30 +22,24 @@ impl<S, F> StreamEffect<S, F> {
     }
 }
 
-impl<S, F> Effect for StreamEffect<S, F>
+impl<Data, S, F> Effect<Data> for StreamEffect<S, F>
 where
     S: Stream,
-    F: FnMut(&mut App, S::Item),
+    F: FnMut(&mut Data, S::Item),
 {
-    fn poll_effect(
-        self: Pin<&mut Self>,
-        app: &mut crate::App,
-        cx: &mut Context<'_>,
-    ) -> Poll<Self::Output> {
+    fn poll_effect(self: Pin<&mut Self>, ctx: &mut Data, async_cx: &mut Context<'_>) -> Poll<()> {
         let p = self.project();
         // Project and lock
-        eprintln!("Effect ready");
-
         let mut stream = p.stream;
         let func = p.func;
 
         loop {
-            let Poll::Ready(item) = stream.as_mut().poll_next(cx) else {
+            let Poll::Ready(item) = stream.as_mut().poll_next(async_cx) else {
                 return Poll::Pending;
             };
 
             if let Some(item) = item {
-                (func)(app, item)
+                (func)(ctx, item)
             } else {
                 break;
             }
@@ -55,6 +47,4 @@ where
 
         Poll::Ready(())
     }
-
-    type Output = ();
 }

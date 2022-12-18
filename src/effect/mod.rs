@@ -1,127 +1,50 @@
+mod executor;
 mod future;
 mod signal;
 mod stream;
 
+pub(crate) use executor::*;
 pub use future::*;
-use parking_lot::Mutex;
+use futures::{Future, Stream, StreamExt};
 pub(crate) use signal::*;
 pub use stream::*;
 
 use std::{
     pin::Pin,
-    sync::{
-        atomic::{AtomicU8, Ordering::*},
-        Arc, Weak,
-    },
     task::{Context, Poll},
 };
 
-use flume::{Receiver, Sender};
-use futures::task::{waker_ref, ArcWake};
-
-use crate::app::App;
-
-/// Represents an asynchronous computation which has access to the app.
-pub trait Effect {
-    /// Advance the computation with the app.
-    type Output;
-    fn poll_effect(self: Pin<&mut Self>, app: &mut App, cx: &mut Context<'_>)
-        -> Poll<Self::Output>;
+/// Represents an asynchronous computation which has access some short lived context when polling.
+///
+/// This can be the app as a whole, or a scope.
+pub trait Effect<Data> {
+    fn poll_effect(self: Pin<&mut Self>, data: &mut Data, async_cx: &mut Context<'_>) -> Poll<()>;
 }
 
-const STATE_PENDING: u8 = 1;
-const STATE_READY: u8 = 2;
-const STATE_ABORTED: u8 = 3;
-const STATE_FINISHED: u8 = 4;
-
-/// Represents a handle to a running task.
-pub struct TaskHandle<T> {
-    inner: Weak<Task<T>>,
+/// Convert any [`futures::Stream`] into an effect which executes for each item
+pub fn from_stream<Data, S, F>(stream: S, func: F) -> StreamEffect<S, F>
+where
+    S: Stream,
+    F: FnMut(&mut Data, S::Item),
+{
+    StreamEffect::new(stream, func)
 }
 
-impl<T> TaskHandle<T> {
-    pub fn abort_on_drop(self) -> AbortTaskHandle<T> {
-        AbortTaskHandle { inner: self.inner }
-    }
-}
+// /// Various ways of turning *something* into an effect using the supplied applicative.
+// pub trait IntoEffect<Data, A> {
+//     type Effect;
+//     fn into_effect(self, apply: A) -> Self::Effect;
+// }
 
-/// Variant of a task handle which aborts the task when dropped
-pub struct AbortTaskHandle<T> {
-    inner: Weak<Task<T>>,
-}
+// pub trait StreamExt: Stream + Sized {
+//     fn into_effect<F>(self, func: F) -> StreamEffect<Self, F>;
+// }
 
-impl<T> AbortTaskHandle<T> {
-    fn abort(&self) {
-        if let Some(inner) = self.inner.upgrade() {
-            inner.state.store(STATE_ABORTED, SeqCst)
-        }
-    }
-}
-
-impl<T> Drop for AbortTaskHandle<T> {
-    fn drop(&mut self) {
-        self.abort()
-    }
-}
-
-/// Represents a unit of effect execution
-pub(crate) struct Task<T> {
-    effect: Mutex<Pin<Box<dyn Effect<Output = T> + Send>>>,
-    queue: Sender<Arc<Self>>,
-    state: AtomicU8,
-}
-
-impl<T> ArcWake for Task<T> {
-    fn wake_by_ref(arc_self: &Arc<Self>) {
-        if arc_self
-            .state
-            .compare_exchange(STATE_PENDING, STATE_READY, Acquire, Relaxed)
-            .is_ok()
-        {
-            eprintln!("Enqueueing task");
-            arc_self.queue.send(arc_self.clone()).ok();
-        } else {
-            eprintln!("Already enqueued or aborted")
-        }
-    }
-}
-
-impl<T> Task<T> {
-    pub(crate) fn new(
-        effect: Pin<Box<dyn Effect<Output = T> + Send>>,
-        queue: Sender<Arc<Self>>,
-    ) -> (Arc<Self>, TaskHandle<T>) {
-        let this = Arc::new(Self {
-            effect: Mutex::new(effect),
-            queue,
-            state: AtomicU8::new(STATE_READY),
-        });
-
-        let handle = TaskHandle {
-            inner: Arc::downgrade(&this),
-        };
-
-        (this, handle)
-    }
-
-    pub fn run(self: &Arc<Self>, app: &mut App) {
-        if self
-            .state
-            .compare_exchange(STATE_READY, STATE_PENDING, Acquire, Relaxed)
-            .is_ok()
-        {
-            let waker = waker_ref(self);
-            let mut cx = Context::from_waker(&waker);
-
-            let mut effect = self.effect.lock();
-            let effect = effect.as_mut();
-
-            if effect.poll_effect(app, &mut cx).is_ready() {
-                self.state.store(STATE_FINISHED, SeqCst);
-            }
-        }
-    }
-}
-
-pub(crate) type EffectSender = Sender<Arc<Task<()>>>;
-pub(crate) type EffectReceiver = Receiver<Arc<Task<()>>>;
+// impl<S> StreamExt for S
+// where
+//     S: Stream + Sized,
+// {
+//     fn into_effect<F>(self, func: F) -> StreamEffect<Self, F> {
+//         StreamEffect::new(self, func)
+//     }
+// }

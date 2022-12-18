@@ -1,8 +1,12 @@
+use std::task::{Context, Poll};
+
 use flax::{child_of, Component, ComponentValue, Entity, EntityRefMut, World};
+use futures::{Future, Stream};
+use pin_project::pin_project;
 
 use crate::{
     components::tasks,
-    effect::{Effect, EffectSender, SignalEffect, Task},
+    effect::{Effect, EffectSender, FutureEffect, SignalEffect, StreamEffect, Task},
     signal::Signal,
     App, Widget,
 };
@@ -28,26 +32,43 @@ impl<'a> Scope<'a> {
         Self { entity, effects_tx }
     }
 
-    /// Executes `func` whenever the signal value changes
-    pub fn use_signal<S, T, F>(&mut self, signal: S, mut func: F)
+    pub fn use_signal<S, F, T>(&mut self, signal: S, func: F)
     where
-        S: 'static + Send + Sync + for<'x> Signal<'x, Item = T>,
-        F: 'static + FnMut(Scope<'_>, T) + Send + Sync,
+        S: 'static + Send + for<'x> Signal<'x, Item = T>,
+        F: 'static + Send + FnMut(&mut Scope<'_>, T),
     {
-        let id = self.entity.id();
-        let effect = SignalEffect::new(signal, move |app: &mut App, item: S::Item| {
-            if let Some(s) = Scope::reconstruct(&mut app.world, &app.effects_tx, id) {
-                func(s, item);
-            }
-        });
-
-        self.spawn_effect(effect);
+        self.use_effect(SignalEffect::new(signal, func))
     }
 
-    /// Spawns the effect into the app.
+    pub fn use_future<Fut, F>(&mut self, fut: Fut, func: F)
+    where
+        Fut: 'static + Send + Future,
+        F: 'static + Send + FnMut(&mut Scope<'_>, Fut::Output),
+    {
+        self.use_effect(FutureEffect::new(fut, func))
+    }
+
+    pub fn use_stream<S, F>(&mut self, fut: S, func: F)
+    where
+        S: 'static + Send + Stream,
+        F: 'static + Send + FnMut(&mut Scope<'_>, S::Item),
+    {
+        self.use_effect(StreamEffect::new(fut, func))
+    }
+
+    /// Spawns the effect inside the given scope.
     ///
     /// Returns a handle which will control the effect
-    fn spawn_effect<E: 'static + Effect<Output = ()> + Send>(&mut self, effect: E) {
+    pub fn use_effect<E>(&mut self, effect: E)
+    where
+        E: 'static + Send + for<'x> Effect<Scope<'x>>,
+    {
+        // lift App => Scope
+        let effect = MapContextScope {
+            id: self.entity.id(),
+            effect,
+        };
+
         let (task, handle) = Task::new(Box::pin(effect), self.effects_tx.clone());
 
         // Abort the effect when despawning the entity
@@ -74,5 +95,44 @@ impl<'a> Scope<'a> {
         let child_scope = Scope::spawn(self.entity.world_mut(), self.effects_tx, Some(id));
 
         widget.render(child_scope);
+    }
+
+    /// Returns the underlying entity for the scope
+    pub fn entity(&self) -> &EntityRefMut<'a> {
+        &self.entity
+    }
+
+    /// Returns the underlying entity for the scope
+    pub fn entity_mut(&mut self) -> &mut EntityRefMut<'a> {
+        &mut self.entity
+    }
+}
+
+/// Lifts a scope local effect to the world.
+#[pin_project]
+struct MapContextScope<E> {
+    #[pin]
+    effect: E,
+    id: Entity,
+}
+
+impl<E> Effect<App> for MapContextScope<E>
+where
+    E: for<'x> Effect<Scope<'x>>,
+{
+    fn poll_effect(
+        self: std::pin::Pin<&mut Self>,
+        app: &mut App,
+        async_cx: &mut Context<'_>,
+    ) -> Poll<()> {
+        let world = &mut app.world;
+        let effects_tx = &app.effects_tx;
+        let scope = Scope::reconstruct(world, effects_tx, self.id);
+
+        if let Some(mut scope) = scope {
+            self.project().effect.poll_effect(&mut scope, async_cx)
+        } else {
+            Poll::Ready(())
+        }
     }
 }

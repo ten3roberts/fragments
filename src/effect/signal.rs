@@ -2,7 +2,7 @@ use std::task::Poll;
 
 use pin_project::pin_project;
 
-use crate::{signal::Signal, App};
+use crate::signal::Signal;
 
 use super::Effect;
 
@@ -22,29 +22,28 @@ impl<S, F> SignalEffect<S, F> {
     }
 }
 
-impl<S, T, F> Effect for SignalEffect<S, F>
+impl<Data, S, T, F> Effect<Data> for SignalEffect<S, F>
 where
     S: for<'x> Signal<'x, Item = T>,
-    F: FnMut(&mut App, T),
+    F: FnMut(&mut Data, T),
 {
-    fn poll_effect(
+    fn poll_effect<'d>(
         self: std::pin::Pin<&mut Self>,
-        app: &mut App,
-        cx: &mut std::task::Context<'_>,
-    ) -> Poll<Self::Output> {
+        ctx: &mut Data,
+        async_cx: &mut std::task::Context<'_>,
+    ) -> Poll<()> {
         let p = self.project();
         // Project and lock
-        eprintln!("Effect ready");
 
         let mut signal = p.signal;
         let func = p.func;
         loop {
-            let Poll::Ready(item) = signal.as_mut().poll_changed(cx) else {
+            let Poll::Ready(item) = signal.as_mut().poll_changed(async_cx) else {
                 return Poll::Pending
             };
 
             if let Some(item) = item {
-                (func)(app, item);
+                (func)(ctx, item);
             } else {
                 break;
             }
@@ -53,6 +52,4 @@ where
         // Done
         Poll::Ready(())
     }
-
-    type Output = ();
 }
