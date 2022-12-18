@@ -13,10 +13,11 @@ use std::{
     task::{Context, Poll},
 };
 
-use futures::{Future, Stream};
+use futures::{ready, Future, Stream};
 
 use self::{hold::Hold, map::Map};
 
+/// A signal represents a value which can change and be observed
 pub trait Signal<'a> {
     type Item: 'a;
 
@@ -64,6 +65,11 @@ pub trait Signal<'a> {
     }
 }
 
+/// Convert a future to a signal which yields one item
+pub fn from_future<F>(future: F) -> FromFuture<F> {
+    FromFuture { fut: Some(future) }
+}
+
 impl<'a, 's, S> Signal<'a> for &'s mut S
 where
     S: Unpin + Signal<'a>,
@@ -71,8 +77,35 @@ where
     type Item = S::Item;
 
     fn poll_changed(self: Pin<&'a mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let v = &mut **self.get_mut();
-        Pin::new(v).poll_changed(cx)
+        let v = self.get_mut();
+        Pin::new(v.deref_mut()).poll_changed(cx)
+    }
+}
+
+#[pin_project]
+pub struct FromFuture<F> {
+    #[pin]
+    fut: Option<F>,
+}
+
+impl<'a, F> Signal<'a> for FromFuture<F>
+where
+    F: Future,
+    F::Output: 'a,
+{
+    type Item = F::Output;
+
+    fn poll_changed(self: Pin<&'a mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let mut p = self.project();
+        match p.fut.as_mut().as_pin_mut() {
+            Some(fut) => {
+                let value = ready!(fut.poll(cx));
+                p.fut.set(None);
+                Poll::Ready(Some(value))
+            }
+            // Future has already completed
+            None => Poll::Ready(None),
+        }
     }
 }
 
@@ -98,21 +131,39 @@ where
     }
 }
 
-pub struct SignalStream<S> {
-    signal: S,
-}
-
-impl<'a, S> Signal<'a> for Pin<Box<S>>
+impl<'a, S> Signal<'a> for Box<S>
 where
-    S: Signal<'a>,
+    S: Unpin + Signal<'a>,
 {
     type Item = S::Item;
 
     fn poll_changed(self: Pin<&'a mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let s = self.get_mut().as_mut();
-        s.poll_changed(cx)
+        let s = self.get_mut();
+        Pin::new(s.deref_mut()).poll_changed(cx)
     }
 }
+
+impl<'a, P> Signal<'a> for Pin<P>
+where
+    P: DerefMut,
+    <P as Deref>::Target: Signal<'a>,
+{
+    type Item = <<P as Deref>::Target as Signal<'a>>::Item;
+
+    fn poll_changed(self: Pin<&'a mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        // Manual implementation of `as_deref_mut`
+        //
+        // See: https://github.com/rust-lang/rust/issues/86918
+        unsafe { self.get_unchecked_mut() }
+            .as_mut()
+            .poll_changed(cx)
+    }
+}
+
+pub struct SignalStream<S> {
+    signal: S,
+}
+
 impl<S, T> Stream for SignalStream<S>
 where
     S: Unpin + for<'x> Signal<'x, Item = T>,
@@ -145,7 +196,11 @@ where
 
 #[cfg(test)]
 mod test {
+
+    use std::time::Duration;
+
     use futures::FutureExt;
+    use tokio::time::sleep;
 
     use super::*;
 
@@ -177,5 +232,18 @@ mod test {
         assert_eq!(s1.next_value().now_or_never(), Some(Some(4)));
 
         task.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn from_future() {
+        let future = Box::pin(async {
+            sleep(Duration::from_secs(1)).await;
+
+            "Hello, World!"
+        });
+
+        let mut signal = super::from_future(future);
+
+        assert_eq!(signal.next_value().await, Some("Hello, World!"))
     }
 }
