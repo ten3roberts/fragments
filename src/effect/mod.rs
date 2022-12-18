@@ -116,7 +116,7 @@ impl<T> Task<T> {
             let mut effect = self.effect.lock();
             let effect = effect.as_mut();
 
-            if let Poll::Ready(_) = effect.poll_effect(app, &mut cx) {
+            if effect.poll_effect(app, &mut cx).is_ready() {
                 self.state.store(STATE_FINISHED, SeqCst);
             }
         }

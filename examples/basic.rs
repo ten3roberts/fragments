@@ -18,12 +18,12 @@ fn main() -> eyre::Result<()> {
             let counter = signal::Mutable::new(0);
 
             let mapped = counter.signal_ref().map(|v| v.to_string());
-            s.create_effect(mapped, |mut s, counter| {
+            s.use_signal(mapped, |mut s, counter| {
                 eprintln!("Counter: {:?}", counter);
                 s.set(text(), counter);
             });
 
-            s.create_effect(counter.signal(), |_, _| {
+            s.use_signal(counter.signal(), |_, _| {
                 eprintln!("counter changed");
             });
 

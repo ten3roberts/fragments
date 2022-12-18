@@ -39,8 +39,8 @@ new_key_type! { pub struct EffectKey; }
 
 #[derive(Debug)]
 pub struct App {
-    world: World,
-    effects_tx: EffectSender,
+    pub(crate) world: World,
+    pub(crate) effects_tx: EffectSender,
     effects_rx: EffectReceiver,
     runtime: Runtime,
 }
@@ -70,7 +70,7 @@ impl App {
     pub fn run(mut self, root: impl Widget) -> Result<(), Error> {
         let rt = self.runtime.handle().clone();
         rt.block_on(async move {
-            let scope = Scope::spawn(&mut self, None);
+            let scope = Scope::spawn(&mut self.world, &self.effects_tx, None);
             root.render(scope);
 
             let mut pending_effects = self.effects_rx.clone().into_stream();
