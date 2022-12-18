@@ -13,7 +13,7 @@ use std::{
     task::{Context, Poll},
 };
 
-use futures::{ready, Future, Stream};
+use futures::{ready, Future, Stream, StreamExt};
 
 use self::{hold::Hold, map::Map};
 
@@ -70,18 +70,6 @@ pub fn from_future<F>(future: F) -> FromFuture<F> {
     FromFuture { fut: Some(future) }
 }
 
-impl<'a, 's, S> Signal<'a> for &'s mut S
-where
-    S: Unpin + Signal<'a>,
-{
-    type Item = S::Item;
-
-    fn poll_changed(self: Pin<&'a mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let v = self.get_mut();
-        Pin::new(v.deref_mut()).poll_changed(cx)
-    }
-}
-
 #[pin_project]
 pub struct FromFuture<F> {
     #[pin]
@@ -106,6 +94,45 @@ where
             // Future has already completed
             None => Poll::Ready(None),
         }
+    }
+}
+
+/// Convert a stream to a signal
+pub fn from_stream<S: Stream>(stream: S) -> FromStream<S> {
+    FromStream {
+        stream: stream.fuse(),
+    }
+}
+
+use futures::stream::Fuse;
+
+#[pin_project]
+pub struct FromStream<S> {
+    #[pin]
+    stream: Fuse<S>,
+}
+
+impl<'a, S> Signal<'a> for FromStream<S>
+where
+    S: Stream,
+    S::Item: 'a,
+{
+    type Item = S::Item;
+
+    fn poll_changed(self: Pin<&'a mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        self.project().stream.poll_next(cx)
+    }
+}
+
+impl<'a, 's, S> Signal<'a> for &'s mut S
+where
+    S: Unpin + Signal<'a>,
+{
+    type Item = S::Item;
+
+    fn poll_changed(self: Pin<&'a mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let v = self.get_mut();
+        Pin::new(v.deref_mut()).poll_changed(cx)
     }
 }
 
