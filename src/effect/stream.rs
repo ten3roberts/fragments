@@ -3,7 +3,7 @@ use std::{
     task::{Context, Poll},
 };
 
-use futures::{Stream, StreamExt};
+use futures::Stream;
 use pin_project::pin_project;
 
 use crate::App;
@@ -26,22 +26,35 @@ impl<S, F> StreamEffect<S, F> {
 
 impl<S, F> Effect for StreamEffect<S, F>
 where
-    S: 'static + Send + Sync + Stream,
-    F: 'static + Send + Sync + FnMut(&mut App, S::Item),
+    S: Stream,
+    F: FnMut(&mut App, S::Item),
 {
-    fn poll_effect(self: Pin<&mut Self>, app: &mut crate::App, cx: &mut Context<'_>) {
+    fn poll_effect(
+        self: Pin<&mut Self>,
+        app: &mut crate::App,
+        cx: &mut Context<'_>,
+    ) -> Poll<Self::Output> {
         let p = self.project();
         // Project and lock
         eprintln!("Effect ready");
 
         let mut stream = p.stream;
         let func = p.func;
-        while let Poll::Ready(Some(item)) = stream.poll_next_unpin(cx) {
-            (func)(app, item)
+
+        loop {
+            let Poll::Ready(item) = stream.as_mut().poll_next(cx) else {
+                return Poll::Pending;
+            };
+
+            if let Some(item) = item {
+                (func)(app, item)
+            } else {
+                break;
+            }
         }
+
+        Poll::Ready(())
     }
 
-    fn abort(&self) {
-        todo!()
-    }
+    type Output = ();
 }

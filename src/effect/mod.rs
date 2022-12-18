@@ -2,18 +2,18 @@ mod future;
 mod signal;
 mod stream;
 
-use atomic_refcell::AtomicRefCell;
 pub use future::*;
+use parking_lot::Mutex;
 pub(crate) use signal::*;
 pub use stream::*;
 
 use std::{
     pin::Pin,
     sync::{
-        atomic::{AtomicBool, Ordering::*},
-        Arc,
+        atomic::{AtomicU8, Ordering::*},
+        Arc, Weak,
     },
-    task::Context,
+    task::{Context, Poll},
 };
 
 use flume::{Receiver, Sender};
@@ -21,28 +21,61 @@ use futures::task::{waker_ref, ArcWake};
 
 use crate::app::App;
 
-/// A `task` which runs on the world
-pub(crate) trait Effect: 'static + Send + Sync {
-    fn poll_effect(self: Pin<&mut Self>, app: &mut App, cx: &mut Context<'_>);
-    fn abort(&self);
+/// Represents an asynchronous computation which has access to the app.
+pub trait Effect {
+    /// Advance the computation with the app.
+    type Output;
+    fn poll_effect(self: Pin<&mut Self>, app: &mut App, cx: &mut Context<'_>)
+        -> Poll<Self::Output>;
 }
 
 const STATE_PENDING: u8 = 1;
 const STATE_READY: u8 = 2;
 const STATE_ABORTED: u8 = 3;
+const STATE_FINISHED: u8 = 4;
 
-/// An effect which queues itself for each item in the signal
-pub(crate) struct EffectExecutor {
-    effect: AtomicRefCell<Pin<Box<dyn Effect>>>,
-    queue: Sender<Arc<EffectExecutor>>,
-    ready: AtomicBool,
+/// Represents a handle to a running task.
+pub struct TaskHandle<T> {
+    inner: Weak<Task<T>>,
 }
 
-impl ArcWake for EffectExecutor {
+impl<T> TaskHandle<T> {
+    pub fn abort_on_drop(self) -> AbortTaskHandle<T> {
+        AbortTaskHandle { inner: self.inner }
+    }
+}
+
+/// Variant of a task handle which aborts the task when dropped
+pub struct AbortTaskHandle<T> {
+    inner: Weak<Task<T>>,
+}
+
+impl<T> AbortTaskHandle<T> {
+    fn abort(&self) {
+        if let Some(inner) = self.inner.upgrade() {
+            inner.state.store(STATE_ABORTED, SeqCst)
+        }
+    }
+}
+
+impl<T> Drop for AbortTaskHandle<T> {
+    fn drop(&mut self) {
+        self.abort()
+    }
+}
+
+/// Represents a unit of effect execution
+pub(crate) struct Task<T> {
+    effect: Mutex<Pin<Box<dyn Effect<Output = T> + Send>>>,
+    queue: Sender<Arc<Self>>,
+    state: AtomicU8,
+}
+
+impl<T> ArcWake for Task<T> {
     fn wake_by_ref(arc_self: &Arc<Self>) {
         if arc_self
-            .ready
-            .compare_exchange(false, true, Acquire, Relaxed)
+            .state
+            .compare_exchange(STATE_PENDING, STATE_READY, Acquire, Relaxed)
             .is_ok()
         {
             eprintln!("Enqueueing task");
@@ -53,73 +86,42 @@ impl ArcWake for EffectExecutor {
     }
 }
 
-impl EffectExecutor {
-    pub(crate) fn new(effect: Pin<Box<dyn Effect>>, queue: Sender<Arc<EffectExecutor>>) -> Self {
-        Self {
-            effect: AtomicRefCell::new(effect),
+impl<T> Task<T> {
+    pub(crate) fn new(
+        effect: Pin<Box<dyn Effect<Output = T> + Send>>,
+        queue: Sender<Arc<Self>>,
+    ) -> (Arc<Self>, TaskHandle<T>) {
+        let this = Arc::new(Self {
+            effect: Mutex::new(effect),
             queue,
-            ready: AtomicBool::new(true),
-        }
+            state: AtomicU8::new(STATE_READY),
+        });
+
+        let handle = TaskHandle {
+            inner: Arc::downgrade(&this),
+        };
+
+        (this, handle)
     }
 
     pub fn run(self: &Arc<Self>, app: &mut App) {
         if self
-            .ready
-            .compare_exchange(true, false, Acquire, Relaxed)
+            .state
+            .compare_exchange(STATE_READY, STATE_PENDING, Acquire, Relaxed)
             .is_ok()
         {
             let waker = waker_ref(self);
             let mut cx = Context::from_waker(&waker);
 
-            let mut effect = self.effect.borrow_mut();
+            let mut effect = self.effect.lock();
             let effect = effect.as_mut();
-            effect.poll_effect(app, &mut cx)
+
+            if let Poll::Ready(_) = effect.poll_effect(app, &mut cx) {
+                self.state.store(STATE_FINISHED, SeqCst);
+            }
         }
     }
 }
 
-// impl<S, F> Effect for SignalEffect<S, F>
-// where
-//     S: 'static + Send + Sync + for<'x> Signal<'x>,
-//     F: 'static + Send + Sync + for<'x> FnMut(&mut App, <S as Signal<'x>>::Item),
-// {
-//     fn poll_effect(self: Arc<Self>, app: &mut App) {
-//         if self
-//             .state
-//             .compare_exchange(
-//                 STATE_READY,
-//                 STATE_PENDING,
-//                 Ordering::Acquire,
-//                 Ordering::Relaxed,
-//             )
-//             .is_ok()
-//         {
-//             eprintln!("Effect ready");
-//             let _self = self.clone();
-
-//             let waker = waker_ref(&self);
-//             let mut cx = Context::from_waker(&waker);
-
-//             {
-//                 let signal = self.signal.borrow_mut();
-//                 // # Safety
-//                 // The signal is never moved or replaced
-//                 let mut signal = unsafe { Pin::new_unchecked(signal) };
-//                 {
-//                     while let Poll::Ready(Some(v)) = signal.as_mut().poll_changed(&mut cx) {
-//                         (self.handler.borrow_mut())(app, v);
-//                     }
-//                 }
-//             }
-//         }
-//     }
-
-//     fn abort(&self) {
-//         eprintln!("Aborting effect");
-//         self.state.store(STATE_ABORTED, Ordering::SeqCst);
-//     }
-// }
-
-pub(crate) type EffectSender = Sender<Arc<EffectExecutor>>;
-pub(crate) type EffectReceiver = Receiver<Arc<EffectExecutor>>;
-
+pub(crate) type EffectSender = Sender<Arc<Task<()>>>;
+pub(crate) type EffectReceiver = Receiver<Arc<Task<()>>>;

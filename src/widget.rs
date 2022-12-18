@@ -1,12 +1,6 @@
-use std::sync::Arc;
-
 use flax::{child_of, Component, ComponentValue, Entity, EntityBuilder, EntityRef, World};
 
-use crate::{
-    app::App,
-    effect::{Effect, SignalEffect},
-    signal::Signal,
-};
+use crate::{app::App, components::tasks, effect::SignalEffect, signal::Signal};
 
 pub trait Widget {
     fn render(self, scope: Scope);
@@ -50,17 +44,15 @@ impl<'a> Scope<'a> {
             }
         });
 
+        let task = self.app.spawn_effect(signal);
+
         // Abort the effect when despawning the entity
-        // self.app
-        //     .world_mut()
-        //     .entry(self.id, abort_on_drop())
-        //     .unwrap()
-        //     .or_default()
-        //     .push(Arc::downgrade(&signal));
-
-        self.app.run_effect(signal);
-
-        // self.app.effects_tx().send(signal).ok();
+        self.app
+            .world_mut()
+            .entry(self.id, tasks())
+            .unwrap()
+            .or_default()
+            .push(task);
     }
 
     /// Reconstruct the scope for an entity

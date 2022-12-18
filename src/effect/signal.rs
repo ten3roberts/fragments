@@ -24,22 +24,35 @@ impl<S, F> SignalEffect<S, F> {
 
 impl<S, T, F> Effect for SignalEffect<S, F>
 where
-    S: 'static + Send + Sync + for<'x> Signal<'x, Item = T>,
-    F: 'static + Send + Sync + FnMut(&mut App, T),
+    S: for<'x> Signal<'x, Item = T>,
+    F: FnMut(&mut App, T),
 {
-    fn poll_effect(self: std::pin::Pin<&mut Self>, app: &mut App, cx: &mut std::task::Context<'_>) {
+    fn poll_effect(
+        self: std::pin::Pin<&mut Self>,
+        app: &mut App,
+        cx: &mut std::task::Context<'_>,
+    ) -> Poll<Self::Output> {
         let p = self.project();
         // Project and lock
         eprintln!("Effect ready");
 
         let mut signal = p.signal;
         let func = p.func;
-        while let Poll::Ready(Some(item)) = signal.as_mut().poll_changed(cx) {
-            (func)(app, item)
+        loop {
+            let Poll::Ready(item) = signal.as_mut().poll_changed(cx) else {
+                return Poll::Pending
+            };
+
+            if let Some(item) = item {
+                (func)(app, item);
+            } else {
+                break;
+            }
         }
+
+        // Done
+        Poll::Ready(())
     }
 
-    fn abort(&self) {
-        // self.inner.abort()
-    }
+    type Output = ();
 }

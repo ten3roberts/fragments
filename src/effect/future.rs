@@ -27,22 +27,26 @@ where
 
 impl<Fut, F> Effect for FutureEffect<Fut, F>
 where
-    Fut: 'static + Send + Sync + Future,
-    F: 'static + Send + Sync + FnOnce(&mut App, Fut::Output),
+    Fut: Future,
+    F: FnOnce(&mut App, Fut::Output),
 {
-    fn poll_effect(self: Pin<&mut Self>, app: &mut App, cx: &mut Context<'_>) {
+    type Output = ();
+    fn poll_effect(
+        self: Pin<&mut Self>,
+        app: &mut App,
+        cx: &mut Context<'_>,
+    ) -> Poll<Self::Output> {
         // Project and lock
         eprintln!("Effect ready");
 
         let p = self.project();
         let mut fut = p.fut;
-        while let Poll::Ready(item) = fut.poll_unpin(cx) {
+        if let Poll::Ready(item) = fut.poll_unpin(cx) {
             let func = p.func.take().unwrap();
-            (func)(app, item)
+            (func)(app, item);
+            Poll::Ready(())
+        } else {
+            Poll::Pending
         }
-    }
-
-    fn abort(&self) {
-        todo!()
     }
 }

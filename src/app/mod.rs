@@ -1,9 +1,12 @@
-use crate::{effect::EffectExecutor, error::Error, Scope, Widget};
+use crate::{
+    effect::{Task, TaskHandle},
+    error::Error,
+    Scope, Widget,
+};
 use flax::World;
 
 use futures::StreamExt;
 use slotmap::new_key_type;
-use std::sync::Arc;
 use tokio::runtime::Runtime;
 
 use crate::effect::{Effect, EffectReceiver, EffectSender};
@@ -79,13 +82,17 @@ impl App {
         Ok(())
     }
 
-    pub(crate) fn run_effect<E: Effect>(&self, effect: E) {
-        self.effects_tx
-            .send(Arc::new(EffectExecutor::new(
-                Box::pin(effect),
-                self.effects_tx.clone(),
-            )))
-            .ok();
+    /// Spawns the effect into the app.
+    ///
+    /// Returns a handle which will control the effect
+    pub(crate) fn spawn_effect<E: 'static + Effect<Output = ()> + Send>(
+        &self,
+        effect: E,
+    ) -> TaskHandle<()> {
+        let (task, handle) = Task::new(Box::pin(effect), self.effects_tx.clone());
+
+        self.effects_tx.send(task).ok();
+        handle
     }
 
     pub(crate) fn effects_tx(&self) -> &EffectSender {

@@ -1,24 +1,12 @@
-use std::sync::{Arc, Weak};
+use std::sync::Arc;
 
 use flax::*;
 
-use crate::effect::Effect;
-
-pub(crate) struct AbortOnDrop {
-    effects: Vec<Arc<dyn Effect>>,
-}
-
-impl Drop for AbortOnDrop {
-    fn drop(&mut self) {
-        for effect in &self.effects {
-            effect.abort()
-        }
-    }
-}
+use crate::effect::TaskHandle;
 
 component! {
     /// Aborts the stored effects when dropped
-    pub(crate) abort_on_drop: Vec<Weak<dyn Effect>>,
+    pub(crate) tasks: Vec<TaskHandle<()>>,
 
     pub text: String => [ Debug ],
 }
