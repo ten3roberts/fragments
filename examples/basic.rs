@@ -2,13 +2,8 @@ use std::time::{Duration, Instant};
 use tracing_subscriber::{prelude::*, util::SubscriberInitExt};
 use tracing_tree::HierarchicalLayer;
 
-use eyre::Context;
 use flax::name;
-use fragments::{
-    components::text,
-    effect::{from_stream, Effect},
-    App, Scope, Widget,
-};
+use fragments::{components::text, App, HeadlessBackend, Scope, Widget};
 
 use tokio::time::interval;
 use tokio_stream::wrappers::IntervalStream;
@@ -38,14 +33,15 @@ impl Widget for Clock {
     }
 }
 
-fn main() -> eyre::Result<()> {
+#[tokio::main]
+async fn main() -> eyre::Result<()> {
     tracing_subscriber::registry()
         .with(HierarchicalLayer::new(4))
         .init();
 
     color_eyre::install()?;
 
-    App::new()
+    App::builder(HeadlessBackend)
         .run(|mut s: Scope| {
             s.set(name(), "Root".into());
 
@@ -63,5 +59,7 @@ fn main() -> eyre::Result<()> {
                 },
             );
         })
-        .wrap_err("Failed to run app")
+        .await;
+
+    Ok(())
 }

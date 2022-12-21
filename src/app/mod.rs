@@ -1,15 +1,10 @@
-use crate::{
-    effect::{Task, TaskHandle},
-    error::Error,
-    Scope, Widget,
-};
+use crate::{Scope, Widget};
 use flax::World;
 
-use futures::StreamExt;
+use futures::future::BoxFuture;
 use slotmap::new_key_type;
-use tokio::runtime::Runtime;
 
-use crate::effect::{Effect, EffectReceiver, EffectSender};
+use crate::effect::{EffectReceiver, EffectSender};
 
 new_key_type! { pub struct EffectKey; }
 
@@ -37,66 +32,72 @@ new_key_type! { pub struct EffectKey; }
 //     }
 // }
 
+pub struct HeadlessBackend;
+
+impl Backend for HeadlessBackend {
+    type Output = BoxFuture<'static, ()>;
+
+    fn run(self, mut app: App) -> BoxFuture<'static, ()> {
+        Box::pin(async move {
+            loop {
+                app.update_async().await;
+            }
+        })
+    }
+}
+
+pub trait Backend {
+    type Output;
+    fn run(self, app: App) -> Self::Output;
+}
+
+pub struct AppBuilder<T> {
+    backend: T,
+}
+
+impl<T> AppBuilder<T>
+where
+    T: Backend,
+{
+    /// Runs the app
+    pub fn run(self, root: impl Widget) -> T::Output {
+        let (tx, rx) = flume::unbounded();
+
+        let mut app = App {
+            world: World::new(),
+            effects_tx: tx,
+            effects_rx: rx,
+        };
+
+        let scope = Scope::spawn(&mut app.world, &app.effects_tx, None);
+        root.render(scope);
+
+        self.backend.run(app)
+    }
+}
+
 #[derive(Debug)]
 pub struct App {
     pub(crate) world: World,
     pub(crate) effects_tx: EffectSender,
-    effects_rx: EffectReceiver,
-    runtime: Runtime,
+    pub(crate) effects_rx: EffectReceiver,
 }
 
 impl App {
-    pub fn new() -> Self {
-        let (effects_tx, effects_rx) = flume::unbounded();
-
-        Self {
-            world: Default::default(),
-            runtime: tokio::runtime::Builder::new_multi_thread()
-                .enable_all()
-                .build()
-                .unwrap(),
-            effects_tx,
-            effects_rx,
-        }
+    pub fn builder<T>(backend: T) -> AppBuilder<T> {
+        AppBuilder { backend }
     }
 
     pub fn update(&mut self) {
-        while let Ok(effect) = self.effects_rx.try_recv() {
-            effect.run(self);
+        for effect in self.effects_rx.clone().drain() {
+            effect.update(self);
         }
     }
 
-    /// Enters the render loop
-    pub fn run(mut self, root: impl Widget) -> Result<(), Error> {
-        let rt = self.runtime.handle().clone();
-        rt.block_on(async move {
-            let scope = Scope::spawn(&mut self.world, &self.effects_tx, None);
-            root.render(scope);
-
-            let mut pending_effects = self.effects_rx.clone().into_stream();
-            eprintln!("Waiting for pending effects");
-            while let Some(effect) = pending_effects.next().await {
-                effect.run(&mut self);
-            }
-        });
-        Ok(())
-    }
-
-    /// Spawns the effect into the app.
-    ///
-    /// Returns a handle which will control the effect
-    pub(crate) fn spawn_effect<E: 'static + Send + Effect<App>>(
-        &self,
-        effect: E,
-    ) -> TaskHandle<()> {
-        let (task, handle) = Task::new(Box::pin(effect), self.effects_tx.clone());
-
-        self.effects_tx.send(task).ok();
-        handle
-    }
-
-    pub(crate) fn effects_tx(&self) -> &EffectSender {
-        &self.effects_tx
+    pub async fn update_async(&mut self) {
+        while let Ok(effect) = self.effects_rx.recv_async().await {
+            effect.update(self);
+        }
     }
 
     pub fn world(&self) -> &World {
@@ -105,12 +106,6 @@ impl App {
 
     pub fn world_mut(&mut self) -> &mut World {
         &mut self.world
-    }
-}
-
-impl Default for App {
-    fn default() -> Self {
-        Self::new()
     }
 }
 

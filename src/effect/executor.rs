@@ -92,7 +92,7 @@ impl<T> Task<T> {
         (this, handle)
     }
 
-    pub fn run(self: &Arc<Self>, app: &mut App) {
+    pub fn update(self: &Arc<Self>, app: &mut App) {
         if self
             .state
             .compare_exchange(
@@ -112,23 +112,6 @@ impl<T> Task<T> {
             if effect.poll_effect(app, &mut cx).is_ready() {
                 self.state.store(STATE_FINISHED, Ordering::SeqCst);
             }
-        }
-    }
-}
-
-/// Executes application level effect tasks.
-///
-/// All scope tasks are lifted to an app level effect
-pub struct AppExecutor {
-    tx: EffectSender,
-    rx: EffectReceiver,
-}
-
-impl AppExecutor {
-    /// Runs all pending effects using the provided app
-    pub fn run(&self, app: &mut App) {
-        for task in self.rx.drain() {
-            task.run(app)
         }
     }
 }
