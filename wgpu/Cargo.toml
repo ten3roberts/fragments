@@ -1,29 +1,21 @@
 [package]
-name = "fragments"
-version = "0.1.0"
+name = "fragments-wgpu"
+version = "0.0.0"
 edition = "2021"
-
-[workspace]
-
-members = ["wgpu"]
-
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 flax = { git = "https://github.com/ten3roberts/flax", version = "*" }
+fragments = { path = "../" }
+
 parking_lot = "0.12"
-tokio = { version = "1.22", features = ["rt", "time", "rt-multi-thread"] }
-futures = "0.3"
+wgpu = "0.14"
+winit = "0.27"
+
 thiserror = "1.0"
-eyre = "0.6"
-slotmap = "1.0"
-dashmap = "5.4"
-flume = "0.10"
-waker-fn = "1.1"
-pin-project = "1.0.12"
-atomic_refcell = "0.1.8"
-tracing = "0.1.37"
+tracing = "0.1"
+futures = "0.3"
 
 [dev-dependencies]
 tracing-tree = "0.2.2"

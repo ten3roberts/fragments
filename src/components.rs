@@ -7,4 +7,5 @@ component! {
     pub(crate) tasks: Vec<TaskHandle<()>>,
 
     pub text: String => [ flax::Debug ],
+    pub resources,
 }

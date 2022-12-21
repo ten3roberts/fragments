@@ -41,25 +41,25 @@ async fn main() -> eyre::Result<()> {
 
     color_eyre::install()?;
 
-    App::builder(HeadlessBackend)
-        .run(|mut s: Scope| {
-            s.set(name(), "Root".into());
+    // App::builder(HeadlessBackend)
+    //     .run(|mut s: Scope| {
+    //         s.set(name(), "Root".into());
 
-            s.attach_child(Clock {});
-            s.attach_child(CustomWidget {
-                text: "Hello, World!".into(),
-            });
+    //         s.attach_child(Clock {});
+    //         s.attach_child(CustomWidget {
+    //             text: "Hello, World!".into(),
+    //         });
 
-            s.use_stream(
-                IntervalStream::new(interval(Duration::from_millis(500))),
-                |scope, _| {
-                    let world = scope.entity().world();
+    //         s.use_stream(
+    //             IntervalStream::new(interval(Duration::from_millis(500))),
+    //             |scope, _| {
+    //                 let world = scope.entity().world();
 
-                    tracing::info!("World: {world:#?}");
-                },
-            );
-        })
-        .await;
+    //                 tracing::info!("World: {world:#?}");
+    //             },
+    //         );
+    //     })
+    //     .await;
 
     Ok(())
 }

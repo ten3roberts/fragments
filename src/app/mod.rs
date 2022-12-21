@@ -60,7 +60,7 @@ where
     T: Backend,
 {
     /// Runs the app
-    pub fn run(self, root: impl Widget) -> T::Output {
+    pub fn run(self) -> T::Output {
         let (tx, rx) = flume::unbounded();
 
         let mut app = App {
@@ -68,9 +68,6 @@ where
             effects_tx: tx,
             effects_rx: rx,
         };
-
-        let scope = Scope::spawn(&mut app.world, &app.effects_tx, None);
-        root.render(scope);
 
         self.backend.run(app)
     }
@@ -99,6 +96,12 @@ impl App {
             effect.update(self);
         }
     }
+
+    pub fn attach_root(&mut self, root:impl Widget){
+        let scope = Scope::spawn(&mut self.world, &self.effects_tx, None);
+        root.render(scope);
+
+      }
 
     pub fn world(&self) -> &World {
         &self.world
