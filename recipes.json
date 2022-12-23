@@ -1,0 +1,3 @@
+{
+  "run-wgpu": { "cmd": "cargo run -p fragments-wgpu --example basic" }
+}

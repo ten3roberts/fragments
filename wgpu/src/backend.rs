@@ -1,4 +1,4 @@
-use fragments::{components::resources, Backend, Widget};
+use fragments::{components::resources, App, Backend, Widget};
 use futures::{channel::oneshot, Future, FutureExt};
 use parking_lot::Mutex;
 use winit::{
@@ -40,17 +40,12 @@ impl WinitRequest {
     }
 }
 
-pub struct WinitBackend<W> {
-    pub root: W,
-}
+pub struct WinitBackend {}
 
-impl<W> Backend for WinitBackend<W>
-where
-    W: Widget,
-{
+impl Backend for WinitBackend {
     type Output = Result<()>;
 
-    fn run(self, mut app: fragments::App) -> Self::Output {
+    fn run<W: Widget>(self, mut app: App, root: W) -> Self::Output {
         let event_loop = EventLoopBuilder::<WinitControl>::with_user_event().build();
 
         let request = WinitRequest {
@@ -61,15 +56,20 @@ where
             .set(resources(), winit_request(), request)
             .unwrap();
 
-        app.attach_root(self.root);
+        app.attach_root(root);
 
+        tracing::info!("Entering event loop");
         event_loop.run(move |event, target, control_flow| match event {
             Event::UserEvent(control) => match control {
                 WinitControl::OpenWindow(window, tx) => {
+                    tracing::info!("Got window request");
                     let window = window().build(target).map_err(Error::Window);
-                    tx.send(window).ok();
+                    tracing::info!("Opened window");
+
+                    tx.send(window).unwrap();
                 }
             },
+            Event::MainEventsCleared => app.update(),
             Event::WindowEvent { ref event, .. } => match event {
                 WindowEvent::CloseRequested
                 | WindowEvent::KeyboardInput {

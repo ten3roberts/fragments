@@ -37,7 +37,8 @@ pub struct HeadlessBackend;
 impl Backend for HeadlessBackend {
     type Output = BoxFuture<'static, ()>;
 
-    fn run(self, mut app: App) -> BoxFuture<'static, ()> {
+    fn run<W: Widget>(self, mut app: App, root: W) -> BoxFuture<'static, ()> {
+        app.attach_root(root);
         Box::pin(async move {
             loop {
                 app.update_async().await;
@@ -48,7 +49,10 @@ impl Backend for HeadlessBackend {
 
 pub trait Backend {
     type Output;
-    fn run(self, app: App) -> Self::Output;
+    /// Enter the main backend loop using the app and provided root widget.
+    ///
+    /// After initialization, the root must be attached.
+    fn run<W: Widget>(self, app: App, root: W) -> Self::Output;
 }
 
 pub struct AppBuilder<T> {
@@ -60,16 +64,16 @@ where
     T: Backend,
 {
     /// Runs the app
-    pub fn run(self) -> T::Output {
+    pub fn run(self, root: impl Widget) -> T::Output {
         let (tx, rx) = flume::unbounded();
 
-        let mut app = App {
+        let app = App {
             world: World::new(),
             effects_tx: tx,
             effects_rx: rx,
         };
 
-        self.backend.run(app)
+        self.backend.run(app, root)
     }
 }
 
@@ -97,11 +101,10 @@ impl App {
         }
     }
 
-    pub fn attach_root(&mut self, root:impl Widget){
+    pub fn attach_root(&mut self, root: impl Widget) {
         let scope = Scope::spawn(&mut self.world, &self.effects_tx, None);
         root.render(scope);
-
-      }
+    }
 
     pub fn world(&self) -> &World {
         &self.world

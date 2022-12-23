@@ -5,7 +5,7 @@ mod stream;
 
 pub(crate) use executor::*;
 pub use future::*;
-use futures::{Future, Stream, StreamExt};
+use futures::Stream;
 pub(crate) use signal::*;
 pub use stream::*;
 
@@ -28,6 +28,27 @@ where
     F: FnMut(&mut Data, S::Item),
 {
     StreamEffect::new(stream, func)
+}
+
+pub struct FnOnceEffect<F> {
+    func: Option<F>,
+}
+
+impl<F> FnOnceEffect<F> {
+    pub fn new(func: F) -> Self {
+        Self { func: Some(func) }
+    }
+}
+
+impl<Data, F> Effect<Data> for FnOnceEffect<F>
+where
+    F: Unpin + FnOnce(&mut Data),
+{
+    fn poll_effect(mut self: Pin<&mut Self>, data: &mut Data, _: &mut Context<'_>) -> Poll<()> {
+        (self.func.take().unwrap())(data);
+
+        Poll::Ready(())
+    }
 }
 
 // /// Various ways of turning *something* into an effect using the supplied applicative.
