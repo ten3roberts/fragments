@@ -1,16 +1,17 @@
 use flax::{Entity, EntityBuilder, World};
+pub mod common;
 
 use crate::Scope;
 
 pub trait Widget {
-    fn render(self, scope: Scope);
+    fn render(self, scope: &mut Scope);
 }
 
 impl<F> Widget for F
 where
-    F: FnMut(Scope<'_>),
+    F: FnMut(&mut Scope<'_>),
 {
-    fn render(mut self, scope: Scope) {
+    fn render(mut self, scope: &mut Scope) {
         (self)(scope)
     }
 }

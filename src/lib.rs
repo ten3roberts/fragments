@@ -2,6 +2,7 @@ mod app;
 pub mod components;
 pub mod effect;
 mod error;
+pub mod events;
 mod scope;
 pub mod signal;
 mod widget;

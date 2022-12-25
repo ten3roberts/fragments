@@ -17,7 +17,7 @@ async fn main() -> color_eyre::Result<()> {
     color_eyre::install()?;
 
     tracing::info!("Running");
-    App::builder(WinitBackend {}).run(|mut s: Scope| {
+    App::builder(WinitBackend {}).run(|s: &mut Scope| {
         let window = s
             .entity_mut()
             .world()

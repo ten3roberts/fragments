@@ -13,7 +13,7 @@ struct CustomWidget {
 }
 
 impl Widget for CustomWidget {
-    fn render(self, mut scope: Scope) {
+    fn render(self, scope: &mut Scope) {
         scope.set(text(), self.text);
     }
 }
@@ -21,7 +21,7 @@ impl Widget for CustomWidget {
 struct Clock {}
 
 impl Widget for Clock {
-    fn render(self, mut scope: Scope) {
+    fn render(self, scope: &mut Scope) {
         let now = Instant::now();
 
         scope.use_stream(

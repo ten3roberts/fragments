@@ -1,4 +1,4 @@
-use fragments::{components::resources, App, Backend, Widget};
+use fragments::{components::resources, effect::AppExecutor, Backend, Widget};
 use futures::{channel::oneshot, Future, FutureExt};
 use parking_lot::Mutex;
 use winit::{
@@ -45,7 +45,7 @@ pub struct WinitBackend {}
 impl Backend for WinitBackend {
     type Output = Result<()>;
 
-    fn run<W: Widget>(self, mut app: App, root: W) -> Self::Output {
+    fn run<W: Widget>(self, mut app: AppExecutor, root: W) -> Self::Output {
         let event_loop = EventLoopBuilder::<WinitControl>::with_user_event().build();
 
         let request = WinitRequest {

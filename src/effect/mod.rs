@@ -3,7 +3,7 @@ mod future;
 mod signal;
 mod stream;
 
-pub(crate) use executor::*;
+pub use executor::*;
 pub use future::*;
 use futures::Stream;
 pub(crate) use signal::*;

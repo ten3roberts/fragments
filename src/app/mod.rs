@@ -1,47 +1,29 @@
-use crate::{Scope, Widget};
-use flax::World;
+use std::time::Duration;
 
-use futures::future::BoxFuture;
+use crate::{
+    effect::{AppExecutor, TaskSpawner},
+    Scope, Widget,
+};
+use flax::{Entity, World};
+
+use futures::future::LocalBoxFuture;
 use slotmap::new_key_type;
-
-use crate::effect::{EffectReceiver, EffectSender};
+use tokio::time::interval;
 
 new_key_type! { pub struct EffectKey; }
-
-// trait Effect {
-//     /// Executes the effect on the world
-//     fn run(&mut self, world: &mut World);
-// }
-
-// struct SignalEffect<S, F>
-// where
-//     S: Signal,
-// {
-//     // This value will be updated by the spawned future
-//     value: Arc<Mutex<Option<S::Item>>>,
-//     func: F,
-// }
-
-// impl<S, F> Effect for SignalEffect<S, F>
-// where
-//     S: Signal,
-//     F: FnMut(&mut World, S::Item),
-// {
-//     fn run(&mut self, world: &mut World) {
-//         (self.func)(world, self.value.lock().take().unwrap());
-//     }
-// }
 
 pub struct HeadlessBackend;
 
 impl Backend for HeadlessBackend {
-    type Output = BoxFuture<'static, ()>;
+    type Output = LocalBoxFuture<'static, ()>;
 
-    fn run<W: Widget>(self, mut app: App, root: W) -> BoxFuture<'static, ()> {
+    fn run<W: Widget>(self, mut app: AppExecutor, root: W) -> Self::Output {
         app.attach_root(root);
         Box::pin(async move {
+            let mut interval = interval(Duration::from_millis(100));
             loop {
-                app.update_async().await;
+                interval.tick().await;
+                app.update();
             }
         })
     }
@@ -52,7 +34,7 @@ pub trait Backend {
     /// Enter the main backend loop using the app and provided root widget.
     ///
     /// After initialization, the root must be attached.
-    fn run<W: Widget>(self, app: App, root: W) -> Self::Output;
+    fn run<W: Widget>(self, app: AppExecutor, root: W) -> Self::Output;
 }
 
 pub struct AppBuilder<T> {
@@ -65,23 +47,16 @@ where
 {
     /// Runs the app
     pub fn run(self, root: impl Widget) -> T::Output {
-        let (tx, rx) = flume::unbounded();
+        let executor = AppExecutor::new(World::new());
 
-        let app = App {
-            world: World::new(),
-            effects_tx: tx,
-            effects_rx: rx,
-        };
-
-        self.backend.run(app, root)
+        self.backend.run(executor, root)
     }
 }
 
 #[derive(Debug)]
 pub struct App {
     pub(crate) world: World,
-    pub(crate) effects_tx: EffectSender,
-    pub(crate) effects_rx: EffectReceiver,
+    pub(crate) spawner: TaskSpawner,
 }
 
 impl App {
@@ -89,21 +64,12 @@ impl App {
         AppBuilder { backend }
     }
 
-    pub fn update(&mut self) {
-        for effect in self.effects_rx.clone().drain() {
-            effect.update(self);
-        }
-    }
-
-    pub async fn update_async(&mut self) {
-        while let Ok(effect) = self.effects_rx.recv_async().await {
-            effect.update(self);
-        }
-    }
-
-    pub fn attach_root(&mut self, root: impl Widget) {
-        let scope = Scope::spawn(&mut self.world, &self.effects_tx, None);
-        root.render(scope);
+    /// Attaches a new root widget
+    pub fn attach_root(&mut self, root: impl Widget) -> Entity {
+        let mut scope = Scope::spawn(&mut self.world, &self.spawner, None);
+        let id = scope.entity().id();
+        root.render(&mut scope);
+        id
     }
 
     pub fn world(&self) -> &World {

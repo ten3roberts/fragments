@@ -6,7 +6,7 @@ use pin_project::pin_project;
 
 use crate::{
     components::tasks,
-    effect::{Effect, EffectSender, FutureEffect, SignalEffect, StreamEffect, Task},
+    effect::{Effect, FutureEffect, SignalEffect, StreamEffect, TaskSpawner},
     signal::Signal,
     App, Widget,
 };
@@ -14,14 +14,14 @@ use crate::{
 /// Represents the scope of a widget.
 pub struct Scope<'a> {
     entity: EntityRefMut<'a>,
-    effects_tx: &'a EffectSender,
+    spawner: &'a TaskSpawner,
 }
 
 impl<'a> Scope<'a> {
     /// Creates a new scope
     pub(crate) fn spawn(
         world: &'a mut World,
-        effects_tx: &'a EffectSender,
+        spawner: &'a TaskSpawner,
         parent: Option<Entity>,
     ) -> Self {
         let mut entity = world.spawn_ref();
@@ -29,7 +29,7 @@ impl<'a> Scope<'a> {
             entity.set(child_of(parent), ());
         }
 
-        Self { entity, effects_tx }
+        Self { entity, spawner }
     }
 
     pub fn use_signal<S, F, T>(&mut self, signal: S, func: F)
@@ -61,7 +61,7 @@ impl<'a> Scope<'a> {
     /// Returns a handle which will control the effect
     pub fn use_effect<E>(&mut self, effect: E)
     where
-        E: 'static + Send + for<'x> Effect<Scope<'x>>,
+        E: 'static + for<'x> Effect<Scope<'x>>,
     {
         // lift App => Scope
         let effect = MapContextScope {
@@ -69,19 +69,17 @@ impl<'a> Scope<'a> {
             effect,
         };
 
-        let (task, handle) = Task::new(Box::pin(effect), self.effects_tx.clone());
+        let handle = self.spawner.spawn(effect);
 
         // Abort the effect when despawning the entity
         self.entity.entry_ref(tasks()).or_default().push(handle);
-
-        self.effects_tx.send(task).ok();
     }
 
     /// Reconstruct the scope for an entity
-    fn reconstruct(world: &'a mut World, effects_tx: &'a EffectSender, id: Entity) -> Option<Self> {
+    fn reconstruct(world: &'a mut World, spawner: &'a TaskSpawner, id: Entity) -> Option<Self> {
         let entity = world.entity_mut(id).ok()?;
 
-        Some(Self { entity, effects_tx })
+        Some(Self { entity, spawner })
     }
 
     /// Set a component for the widget
@@ -92,9 +90,9 @@ impl<'a> Scope<'a> {
 
     pub fn attach_child<W: Widget>(&mut self, widget: W) {
         let id = self.entity.id();
-        let child_scope = Scope::spawn(self.entity.world_mut(), self.effects_tx, Some(id));
+        let mut child_scope = Scope::spawn(self.entity.world_mut(), self.spawner, Some(id));
 
-        widget.render(child_scope);
+        widget.render(&mut child_scope);
     }
 
     /// Returns the underlying entity for the scope
@@ -126,8 +124,9 @@ where
         async_cx: &mut Context<'_>,
     ) -> Poll<()> {
         let world = &mut app.world;
-        let effects_tx = &app.effects_tx;
-        let scope = Scope::reconstruct(world, effects_tx, self.id);
+        let spawner = &app.spawner;
+
+        let scope = Scope::reconstruct(world, spawner, self.id);
 
         if let Some(mut scope) = scope {
             self.project().effect.poll_effect(&mut scope, async_cx)
