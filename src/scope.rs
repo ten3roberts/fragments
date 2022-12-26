@@ -1,12 +1,13 @@
 use std::task::{Context, Poll};
 
-use flax::{child_of, Component, ComponentValue, Entity, EntityRefMut, World};
+use flax::{child_of, Component, ComponentValue, Entity, EntityRef, EntityRefMut, World};
 use futures::{Future, Stream};
 use pin_project::pin_project;
 
 use crate::{
     components::tasks,
     effect::{Effect, FutureEffect, SignalEffect, StreamEffect, TaskSpawner},
+    events::{EventHandler, EventState},
     signal::Signal,
     App, Widget,
 };
@@ -34,24 +35,24 @@ impl<'a> Scope<'a> {
 
     pub fn use_signal<S, F, T>(&mut self, signal: S, func: F)
     where
-        S: 'static + Send + for<'x> Signal<'x, Item = T>,
-        F: 'static + Send + FnMut(&mut Scope<'_>, T),
+        S: 'static + for<'x> Signal<'x, Item = T>,
+        F: 'static + FnMut(&mut Scope<'_>, T),
     {
         self.use_effect(SignalEffect::new(signal, func))
     }
 
     pub fn use_future<Fut, F>(&mut self, fut: Fut, func: F)
     where
-        Fut: 'static + Send + Future,
-        F: 'static + Send + FnMut(&mut Scope<'_>, Fut::Output),
+        Fut: 'static + Future,
+        F: 'static + FnMut(&mut Scope<'_>, Fut::Output),
     {
         self.use_effect(FutureEffect::new(fut, func))
     }
 
     pub fn use_stream<S, F>(&mut self, fut: S, func: F)
     where
-        S: 'static + Send + Stream,
-        F: 'static + Send + FnMut(&mut Scope<'_>, S::Item),
+        S: 'static + Stream,
+        F: 'static + FnMut(&mut Scope<'_>, S::Item),
     {
         self.use_effect(StreamEffect::new(fut, func))
     }
@@ -75,6 +76,22 @@ impl<'a> Scope<'a> {
         self.entity.entry_ref(tasks()).or_default().push(handle);
     }
 
+    /// Execute the provided handler for `event_kind`.
+    ///
+    /// The event handlers run without mutable access to the world, and can as such not attach new
+    /// children.
+    pub fn on_event<E>(
+        &mut self,
+        event_kind: Component<EventHandler<E>>,
+        event_handler: impl 'static + Send + Sync + FnMut(EntityRef, &E) -> EventState,
+    ) -> &mut Self
+    where
+        E: 'static,
+    {
+        self.set(event_kind, Box::new(event_handler));
+        self
+    }
+
     /// Reconstruct the scope for an entity
     fn reconstruct(world: &'a mut World, spawner: &'a TaskSpawner, id: Entity) -> Option<Self> {
         let entity = world.entity_mut(id).ok()?;
@@ -88,11 +105,18 @@ impl<'a> Scope<'a> {
         self
     }
 
-    pub fn attach_child<W: Widget>(&mut self, widget: W) {
+    pub fn attach_child<W: Widget>(&mut self, widget: W) -> Entity {
         let id = self.entity.id();
         let mut child_scope = Scope::spawn(self.entity.world_mut(), self.spawner, Some(id));
+        let id = child_scope.id();
 
         widget.render(&mut child_scope);
+        id
+    }
+
+    /// Returns the entity id
+    pub fn id(&self) -> Entity {
+        self.entity.id()
     }
 
     /// Returns the underlying entity for the scope

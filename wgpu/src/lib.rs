@@ -1,6 +1,7 @@
 mod backend;
 mod components;
 pub mod error;
+pub mod events;
 pub mod state;
 
 pub use backend::*;

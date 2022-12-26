@@ -1,8 +1,13 @@
-use std::sync::Arc;
+use std::{iter::once, sync::Arc};
 
-use winit::window::Window;
+use fragments::{components::resources, events::EventState, Scope, Widget};
+use winit::window::{Window, WindowBuilder};
 
-use crate::error::{Error, Result};
+use crate::{
+    error::{Error, Result},
+    events::{on_frame, on_resize},
+    graphics_state, winit_request,
+};
 
 pub struct GraphicsState {
     surface: wgpu::Surface,
@@ -75,5 +80,101 @@ impl GraphicsState {
             size,
             window,
         })
+    }
+
+    pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
+        if new_size.width > 0 && new_size.height > 0 {
+            self.size = new_size;
+            self.config.width = new_size.width;
+            self.config.height = new_size.height;
+            self.surface.configure(&self.device, &self.config);
+        }
+    }
+
+    fn draw(&mut self) -> Result<()> {
+        let target = self.surface.get_current_texture()?;
+        let view = target
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Render Encoder"),
+            });
+
+        {
+            let _render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Render Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color {
+                            r: 0.1,
+                            g: 0.2,
+                            b: 0.3,
+                            a: 1.0,
+                        }),
+                        store: true,
+                    },
+                })],
+                depth_stencil_attachment: None,
+            });
+        }
+
+        self.queue.submit(once(encoder.finish()));
+        target.present();
+
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub struct GraphicsLayer {}
+
+impl Widget for GraphicsLayer {
+    fn render(self, scope: &mut Scope) {
+        let window = scope
+            .entity_mut()
+            .world()
+            .get_mut(resources(), winit_request())
+            .unwrap()
+            .request_window(|| {
+                WindowBuilder::new()
+                    .with_visible(true)
+                    .with_decorations(true)
+                    .with_title("fragments")
+            });
+
+        let state = async {
+            let window = Arc::new(window.await.unwrap());
+            let state = GraphicsState::new(window).await?;
+            tracing::info!("Intialized graphics state");
+
+            Ok::<_, Error>(state)
+        };
+
+        scope.use_future(state, |scope, state| {
+            if let Ok(state) = state {
+                scope.set(graphics_state(), state);
+            }
+        });
+
+        scope.on_event(on_resize(), |entity, &size| {
+            if let Ok(mut state) = entity.get_mut(graphics_state()) {
+                state.resize(size);
+            }
+
+            Default::default()
+        });
+
+        scope.on_event(on_frame(), |entity, &size| {
+            if let Ok(mut state) = entity.get_mut(graphics_state()) {
+                state.draw();
+            }
+
+            Default::default()
+        });
     }
 }

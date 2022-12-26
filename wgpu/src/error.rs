@@ -8,6 +8,8 @@ pub enum Error {
     NoSuitableAdapter,
     #[error("Failed to request a device from the adapter")]
     RequestDevice(#[from] wgpu::RequestDeviceError),
+    #[error("Failed to perform surface request")]
+    SurfaceError(#[from] wgpu::SurfaceError),
 }
 
 pub(crate) type Result<T> = std::result::Result<T, Error>;

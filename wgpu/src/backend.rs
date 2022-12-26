@@ -1,4 +1,4 @@
-use fragments::{components::resources, effect::AppExecutor, Backend, Widget};
+use fragments::{components::resources, effect::AppExecutor, events::send_event, Backend, Widget};
 use futures::{channel::oneshot, Future, FutureExt};
 use parking_lot::Mutex;
 use winit::{
@@ -10,6 +10,7 @@ use winit::{
 use crate::{
     components::winit_request,
     error::{Error, Result},
+    events::{on_frame, on_redraw, on_resize},
 };
 
 enum WinitControl {
@@ -56,7 +57,7 @@ impl Backend for WinitBackend {
             .set(resources(), winit_request(), request)
             .unwrap();
 
-        app.attach_root(root);
+        let root = app.attach_root(root);
 
         tracing::info!("Entering event loop");
         event_loop.run(move |event, target, control_flow| match event {
@@ -69,8 +70,17 @@ impl Backend for WinitBackend {
                     tx.send(window).unwrap();
                 }
             },
-            Event::MainEventsCleared => app.update(),
+            Event::MainEventsCleared => {
+                send_event(app.world(), root, on_frame(), &());
+                app.update();
+            }
+            Event::RedrawRequested(_window) => {
+                send_event(app.world(), root, on_redraw(), &());
+            }
             Event::WindowEvent { ref event, .. } => match event {
+                WindowEvent::Resized(new_size) => {
+                    send_event(app.world(), root, on_resize(), new_size);
+                }
                 WindowEvent::CloseRequested
                 | WindowEvent::KeyboardInput {
                     input:

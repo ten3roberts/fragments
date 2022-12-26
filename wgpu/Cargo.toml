@@ -11,7 +11,7 @@ fragments = { path = "../" }
 
 parking_lot = "0.12"
 wgpu = "0.14"
-winit = "0.27"
+winit = { version = "0.27", default_features = true, features = [] }
 
 thiserror = "1.0"
 tracing = "0.1"
