@@ -1,5 +1,5 @@
 use flax::component;
-use fragments::events::EventHandler;
+use fragments_core::events::EventHandler;
 use winit::{dpi::PhysicalSize, event::KeyboardInput};
 
 component! {

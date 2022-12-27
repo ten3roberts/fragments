@@ -76,14 +76,14 @@ impl<'a> Scope<'a> {
         self.entity.entry_ref(tasks()).or_default().push(handle);
     }
 
-    /// Execute the provided handler for `event_kind`.
+    /// Listener for a global event
     ///
     /// The event handlers run without mutable access to the world, and can as such not attach new
     /// children.
-    pub fn on_event<E>(
+    pub fn on_global_event<E>(
         &mut self,
         event_kind: Component<EventHandler<E>>,
-        event_handler: impl 'static + Send + Sync + FnMut(EntityRef, &E) -> EventState,
+        event_handler: impl 'static + Send + Sync + FnMut(EntityRef, &E),
     ) -> &mut Self
     where
         E: 'static,

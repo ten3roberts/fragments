@@ -1,5 +1,6 @@
-use fragments::{common::Container, App};
-use fragments_wgpu::{GraphicsLayer, WinitBackend};
+use fragments_core::{common::Container, App};
+use fragments_glfw::{backend::GlfwBackend, *};
+use fragments_wgpu::GraphicsLayer;
 use tracing_subscriber::{prelude::*, EnvFilter};
 use tracing_tree::HierarchicalLayer;
 
@@ -13,7 +14,8 @@ async fn main() -> color_eyre::Result<()> {
     color_eyre::install()?;
 
     tracing::info!("Running");
-    App::builder(WinitBackend {}).run(Container(GraphicsLayer {}))?;
+
+    App::builder(GlfwBackend {}).run(Container(GraphicsLayer {}))?;
 
     Ok(())
 }

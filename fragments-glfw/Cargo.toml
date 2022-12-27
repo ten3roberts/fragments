@@ -1,5 +1,5 @@
 [package]
-name = "fragments-wgpu"
+name = "fragments-glfw"
 version = "0.0.0"
 edition = "2021"
 
@@ -11,14 +11,11 @@ flax = { git = "https://github.com/ten3roberts/flax", version = "*" }
 fragments-core = { path = "../fragments-core" }
 
 parking_lot = "0.12"
-wgpu = "0.14"
-winit = { version = "0.27", default_features = true }
-raw-window-handle = "0.5"
 
 thiserror = "1.0"
 tracing = "0.1"
 futures = "0.3"
-glfw = { version = "0.48.0", features = ["vulkan"] }
+glfw = { version = "0.48.0", features = ["wayland", "log"] }
 flume = "0.10.14"
 slotmap = "1.0.6"
 

@@ -1,6 +1,6 @@
 use std::{iter::once, sync::Arc};
 
-use fragments::{components::resources, events::EventState, Scope, Widget};
+use fragments_core::{components::resources, events::EventState, Scope, Widget};
 use winit::window::{Window, WindowBuilder};
 
 use crate::{
@@ -83,6 +83,7 @@ impl GraphicsState {
     }
 
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
+        tracing::info!(?new_size, "Resizing");
         if new_size.width > 0 && new_size.height > 0 {
             self.size = new_size;
             self.config.width = new_size.width;
@@ -111,9 +112,9 @@ impl GraphicsState {
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.1,
-                            g: 0.2,
-                            b: 0.3,
+                            r: 0.3,
+                            g: 0.0,
+                            b: 0.5,
                             a: 1.0,
                         }),
                         store: true,
@@ -140,12 +141,7 @@ impl Widget for GraphicsLayer {
             .world()
             .get_mut(resources(), winit_request())
             .unwrap()
-            .request_window(|| {
-                WindowBuilder::new()
-                    .with_visible(true)
-                    .with_decorations(true)
-                    .with_title("fragments")
-            });
+            .request_window(|| WindowBuilder::new().with_title("fragments"));
 
         let state = async {
             let window = Arc::new(window.await.unwrap());
@@ -161,7 +157,7 @@ impl Widget for GraphicsLayer {
             }
         });
 
-        scope.on_event(on_resize(), |entity, &size| {
+        scope.on_global_event(on_resize(), |entity, &size| {
             if let Ok(mut state) = entity.get_mut(graphics_state()) {
                 state.resize(size);
             }
@@ -169,7 +165,7 @@ impl Widget for GraphicsLayer {
             Default::default()
         });
 
-        scope.on_event(on_frame(), |entity, &size| {
+        scope.on_global_event(on_frame(), |entity, &size| {
             if let Ok(mut state) = entity.get_mut(graphics_state()) {
                 state.draw();
             }

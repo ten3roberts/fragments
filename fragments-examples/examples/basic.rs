@@ -1,11 +1,9 @@
+use color_eyre::eyre;
 use std::time::{Duration, Instant};
 use tracing_subscriber::{prelude::*, util::SubscriberInitExt};
 use tracing_tree::HierarchicalLayer;
 
-use flax::name;
-use fragments::{components::text, App, HeadlessBackend, Scope, Widget};
-
-use tokio::time::interval;
+use fragments_core::{components::text, Scope, Widget};
 use tokio_stream::wrappers::IntervalStream;
 
 struct CustomWidget {

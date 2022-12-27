@@ -1,4 +1,6 @@
 {
-  "run": "run-wgpu",
-  "run-wgpu": { "cmd": "cargo run -p fragments-wgpu --example basic" }
+  "run": "run-winit",
+  "check": { "cmd": "cargo check --workspace" },
+  "run-winit": { "cmd": "cargo run --example winit" },
+  "run-glfw": { "cmd": "cargo run --example glfw" }
 }

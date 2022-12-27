@@ -10,6 +10,9 @@ pub enum Error {
     RequestDevice(#[from] wgpu::RequestDeviceError),
     #[error("Failed to perform surface request")]
     SurfaceError(#[from] wgpu::SurfaceError),
+
+    #[error("Window handling backend is closed")]
+    BackendClosed,
 }
 
 pub(crate) type Result<T> = std::result::Result<T, Error>;

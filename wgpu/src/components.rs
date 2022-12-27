@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use flax::component;
 
 use crate::{state::GraphicsState, WinitRequest};
