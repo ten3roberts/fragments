@@ -9,7 +9,7 @@ pub trait Widget: BoxedWidget {
 
 impl<F> Widget for F
 where
-    F: FnMut(&mut Scope<'_>),
+    F: FnOnce(&mut Scope<'_>),
 {
     fn render(mut self, scope: &mut Scope) {
         (self)(scope)

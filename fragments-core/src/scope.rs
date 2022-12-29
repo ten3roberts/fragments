@@ -1,13 +1,15 @@
 use std::task::{Context, Poll};
 
+use atomic_refcell::AtomicRef;
 use flax::{child_of, Component, ComponentValue, Entity, EntityRef, EntityRefMut, World};
 use futures::{Future, Stream};
 use pin_project::pin_project;
 
 use crate::{
     components::tasks,
+    context::ContextKey,
     effect::{Effect, FutureEffect, SignalEffect, StreamEffect, TaskSpawner},
-    events::{EventHandler, EventState},
+    events::EventHandler,
     signal::Signal,
     App, Widget,
 };
@@ -57,7 +59,35 @@ impl<'a> Scope<'a> {
         self.use_effect(StreamEffect::new(fut, func))
     }
 
-    /// Spawns the effect inside the given scope.
+    /// Provide a context to all children
+    pub fn provide_context<T: ComponentValue>(
+        &mut self,
+        key: ContextKey<T>,
+        value: T,
+    ) -> &mut Self {
+        self.set(key.into_raw(), value);
+        self
+    }
+
+    /// Consumes a context provided higher up in the tree.
+    pub fn consume_context<T: ComponentValue>(&self, key: ContextKey<T>) -> Option<AtomicRef<T>> {
+        let world = self.entity.world();
+        let mut cur = self.entity.downgrade_ref();
+        let key = key.into_raw();
+        loop {
+            if let Ok(value) = cur.get(key) {
+                return Some(value);
+            }
+
+            if let Some((parent, _)) = cur.relations(child_of).next() {
+                cur = world.entity(parent).unwrap();
+            } else {
+                return None;
+            }
+        }
+    }
+
+    /// Spawns an effect inside the given scope.
     ///
     /// Returns a handle which will control the effect
     pub fn use_effect<E>(&mut self, effect: E)

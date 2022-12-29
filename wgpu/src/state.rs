@@ -1,12 +1,12 @@
 use std::{iter::once, sync::Arc};
 
-use fragments_core::{components::resources, events::EventState, Scope, Widget};
+use fragments_core::{events::EventState, Scope, Widget};
 use winit::window::{Window, WindowBuilder};
 
 use crate::{
     error::{Error, Result},
     events::{on_frame, on_resize},
-    graphics_state, winit_request,
+    graphics_state, window_manager,
 };
 
 pub struct GraphicsState {
@@ -136,12 +136,13 @@ pub struct GraphicsLayer {}
 
 impl Widget for GraphicsLayer {
     fn render(self, scope: &mut Scope) {
-        let window = scope
-            .entity_mut()
-            .world()
-            .get_mut(resources(), winit_request())
-            .unwrap()
-            .request_window(|| WindowBuilder::new().with_title("fragments"));
+        let window_manager = scope
+            .consume_context(window_manager())
+            .expect("No window manager context");
+
+        let window = window_manager.create_window(|| WindowBuilder::new().with_title("Fragments"));
+
+        drop(window_manager);
 
         let state = async {
             let window = Arc::new(window.await.unwrap());

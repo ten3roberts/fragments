@@ -1,5 +1,6 @@
 mod app;
 pub mod components;
+pub mod context;
 pub mod effect;
 mod error;
 pub mod events;

@@ -1,5 +1,5 @@
 use fragments_core::{
-    components::resources, effect::AppExecutor, events::EventBroadcaster, Backend, Widget,
+    components::resources, effect::AppExecutor, events::EventBroadcaster, Backend, Scope, Widget,
 };
 use futures::{channel::oneshot, Future, FutureExt};
 use parking_lot::Mutex;
@@ -11,9 +11,9 @@ use winit::{
 };
 
 use crate::{
-    components::winit_request,
     error::{Error, Result},
     events::{on_frame, on_redraw, on_resize},
+    window_manager,
 };
 
 enum ControlEvent {
@@ -23,15 +23,16 @@ enum ControlEvent {
     ),
 }
 
-pub struct WinitRequest {
+/// Allow communication with the winit backend to E.g; open windows
+pub struct WindowManager {
     proxy: Mutex<EventLoopProxy<ControlEvent>>,
 }
 
-impl WinitRequest {
-    pub fn request_window<F: FnOnce() -> WindowBuilder + Send + Sync + 'static>(
-        &self,
-        window: F,
-    ) -> impl Future<Output = Result<Window>> {
+impl WindowManager {
+    pub fn create_window<F>(&self, window: F) -> impl Future<Output = Result<Window>>
+    where
+        F: FnOnce() -> WindowBuilder + Send + Sync + 'static,
+    {
         let (tx, rx) = oneshot::channel();
 
         self.proxy
@@ -52,15 +53,15 @@ impl Backend for WinitBackend {
     fn run<W: Widget>(self, mut app: AppExecutor, root: W) -> Self::Output {
         let event_loop = EventLoopBuilder::<ControlEvent>::with_user_event().build();
 
-        let request = WinitRequest {
+        let wmanager = WindowManager {
             proxy: Mutex::new(event_loop.create_proxy()),
         };
 
-        app.world_mut()
-            .set(resources(), winit_request(), request)
-            .unwrap();
+        let root = app.attach_root(|scope: &mut Scope| {
+            scope.provide_context(window_manager(), wmanager);
 
-        let root = app.attach_root(root);
+            scope.attach_child(root);
+        });
 
         let _span = info_span!("event_loop").entered();
 

@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 glam.workspace = true
-flax = { git = "https://github.com/ten3roberts/flax", version = "*" }
+flax.workspace = true
 fragments-core = { path = "../fragments-core" }
 
 parking_lot = "0.12"

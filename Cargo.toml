@@ -4,3 +4,4 @@ members = ["wgpu", "fragments-core", "fragments-glfw", "fragments-examples"]
 
 [workspace.dependencies]
 glam = "0.22"
+flax = { git = "https://github.com/ten3roberts/flax", version = "*" }

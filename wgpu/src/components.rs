@@ -1,8 +1,12 @@
 use flax::component;
+use fragments_core::context;
 
-use crate::{state::GraphicsState, WinitRequest};
+use crate::{state::GraphicsState, WindowManager};
 
 component! {
     pub graphics_state: GraphicsState,
-    pub winit_request: WinitRequest,
+}
+
+context! {
+    pub window_manager: WindowManager,
 }

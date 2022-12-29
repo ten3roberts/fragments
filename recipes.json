@@ -2,5 +2,6 @@
   "run": "run-winit",
   "check": { "cmd": "cargo check --workspace" },
   "run-winit": { "cmd": "cargo run --example winit" },
-  "run-glfw": { "cmd": "cargo run --example glfw" }
+  "run-glfw": { "cmd": "cargo run --example glfw" },
+  "test": { "cmd": "cargo nextest run" }
 }
