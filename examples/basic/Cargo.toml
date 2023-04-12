@@ -1,0 +1,15 @@
+[package]
+name = "basic"
+version = "0.0.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow.workspace = true
+
+fragments-wgpu = { path = "../../fragments-wgpu" }
+fragments-core = { path = "../../fragments-core" }
+tracing-subscriber = "0.3"
+tracing-tree = "0.2"
+

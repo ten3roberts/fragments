@@ -10,29 +10,23 @@ use crate::{
     context::ContextKey,
     effect::{Effect, FutureEffect, SignalEffect, StreamEffect, TaskSpawner},
     events::EventHandler,
+    frame::Frame,
     signal::Signal,
-    App, Widget,
+    Widget,
 };
 
 /// Represents the scope of a widget.
 pub struct Scope<'a> {
-    entity: EntityRefMut<'a>,
-    spawner: &'a TaskSpawner,
+    id: Entity,
+    frame: &'a mut Frame,
 }
 
 impl<'a> Scope<'a> {
     /// Creates a new scope
-    pub(crate) fn spawn(
-        world: &'a mut World,
-        spawner: &'a TaskSpawner,
-        parent: Option<Entity>,
-    ) -> Self {
-        let mut entity = world.spawn_ref();
-        if let Some(parent) = parent {
-            entity.set(child_of(parent), ());
-        }
+    pub(crate) fn spawn(frame: &'a mut Frame) -> Self {
+        let mut id = frame.world.spawn();
 
-        Self { entity, spawner }
+        Self { id, frame }
     }
 
     pub fn use_signal<S, F, T>(&mut self, signal: S, func: F)
@@ -71,8 +65,8 @@ impl<'a> Scope<'a> {
 
     /// Consumes a context provided higher up in the tree.
     pub fn consume_context<T: ComponentValue>(&self, key: ContextKey<T>) -> Option<AtomicRef<T>> {
-        let world = self.entity.world();
-        let mut cur = self.entity.downgrade_ref();
+        let world = &self.frame.world;
+        let mut cur = world.entity(self.id).unwrap();
         let key = key.into_raw();
         loop {
             if let Ok(value) = cur.get(key) {
@@ -95,15 +89,18 @@ impl<'a> Scope<'a> {
         E: 'static + for<'x> Effect<Scope<'x>>,
     {
         // lift App => Scope
-        let effect = MapContextScope {
-            id: self.entity.id(),
+        let effect = LiftScope {
+            id: self.id,
             effect,
         };
 
-        let handle = self.spawner.spawn(effect);
+        let handle = self.frame.spawner.spawn(effect);
 
         // Abort the effect when despawning the entity
-        self.entity.entry_ref(tasks()).or_default().push(handle);
+        self.entity_mut()
+            .entry_ref(tasks())
+            .or_default()
+            .push(handle);
     }
 
     /// Listener for a global event
@@ -122,22 +119,16 @@ impl<'a> Scope<'a> {
         self
     }
 
-    /// Reconstruct the scope for an entity
-    fn reconstruct(world: &'a mut World, spawner: &'a TaskSpawner, id: Entity) -> Option<Self> {
-        let entity = world.entity_mut(id).ok()?;
-
-        Some(Self { entity, spawner })
-    }
-
     /// Set a component for the widget
     pub fn set<T: ComponentValue>(&mut self, component: Component<T>, value: T) -> &mut Self {
-        self.entity.set(component, value);
+        self.entity_mut().set(component, value);
         self
     }
 
-    pub fn attach_child<W: Widget>(&mut self, widget: W) -> Entity {
-        let id = self.entity.id();
-        let mut child_scope = Scope::spawn(self.entity.world_mut(), self.spawner, Some(id));
+    pub fn attach<W: Widget>(&mut self, widget: W) -> Entity {
+        let id = self.id;
+        let mut child_scope = Scope::spawn(self.frame);
+        child_scope.set(child_of(self.id), ());
         let id = child_scope.id();
 
         widget.render(&mut child_scope);
@@ -146,46 +137,45 @@ impl<'a> Scope<'a> {
 
     /// Returns the entity id
     pub fn id(&self) -> Entity {
-        self.entity.id()
+        self.id
     }
 
     /// Returns the underlying entity for the scope
-    pub fn entity(&self) -> &EntityRefMut<'a> {
-        &self.entity
+    pub fn entity(&self) -> EntityRef {
+        self.frame
+            .world
+            .entity(self.id)
+            .expect("Entity was despawned")
     }
 
     /// Returns the underlying entity for the scope
-    pub fn entity_mut(&mut self) -> &mut EntityRefMut<'a> {
-        &mut self.entity
+    pub fn entity_mut(&mut self) -> EntityRefMut {
+        self.frame
+            .world
+            .entity_mut(self.id)
+            .expect("Entity was despawned")
     }
 }
 
 /// Lifts a scope local effect to the world.
 #[pin_project]
-struct MapContextScope<E> {
+struct LiftScope<E> {
     #[pin]
     effect: E,
     id: Entity,
 }
 
-impl<E> Effect<App> for MapContextScope<E>
+impl<E> Effect<Frame> for LiftScope<E>
 where
     E: for<'x> Effect<Scope<'x>>,
 {
     fn poll_effect(
         self: std::pin::Pin<&mut Self>,
-        app: &mut App,
-        async_cx: &mut Context<'_>,
+        frame: &mut Frame,
+        cx: &mut Context<'_>,
     ) -> Poll<()> {
-        let world = &mut app.world;
-        let spawner = &app.spawner;
+        let mut scope = Scope { id: self.id, frame };
 
-        let scope = Scope::reconstruct(world, spawner, self.id);
-
-        if let Some(mut scope) = scope {
-            self.project().effect.poll_effect(&mut scope, async_cx)
-        } else {
-            Poll::Ready(())
-        }
+        self.project().effect.poll_effect(&mut scope, cx)
     }
 }

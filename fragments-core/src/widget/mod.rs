@@ -3,7 +3,13 @@ pub mod common;
 
 use crate::Scope;
 
+/// A widget is a low level primitive.
+///
+/// When a widget is rendered it will attach its state and functionality to a node in the UI.
 pub trait Widget: BoxedWidget {
+    /// Puts the widget into the world in the given scope.
+    ///
+    /// The scope is used to spawn tasks which update the state.
     fn render(self, scope: &mut Scope);
 }
 
@@ -54,14 +60,14 @@ trait WidgetCollection {
 impl WidgetCollection for Vec<Box<dyn Widget>> {
     fn attach(self, parent: &mut Scope) -> Vec<Entity> {
         self.into_iter()
-            .map(|widget| parent.attach_child(widget))
+            .map(|widget| parent.attach(widget))
             .collect()
     }
 }
 
 impl<const C: usize> WidgetCollection for [Box<dyn Widget>; C] {
     fn attach(self, parent: &mut Scope) -> Vec<Entity> {
-        self.map(|widget| parent.attach_child(widget)).to_vec()
+        self.map(|widget| parent.attach(widget)).to_vec()
     }
 }
 
@@ -70,7 +76,7 @@ where
     W: Widget,
 {
     fn attach(self, parent: &mut Scope) -> Vec<Entity> {
-        vec![parent.attach_child(self)]
+        vec![parent.attach(self)]
     }
 }
 
@@ -81,7 +87,7 @@ macro_rules! tuple_impl {
         {
             fn attach(self, parent: &mut Scope) -> Vec<Entity> {
                 vec![ $(
-                    parent.attach_child(self.$idx)
+                    parent.attach(self.$idx)
                 ),* ]
             }
         }

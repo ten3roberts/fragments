@@ -6,7 +6,7 @@ use winit::window::{Window, WindowBuilder};
 use crate::{
     error::{Error, Result},
     events::{on_frame, on_resize},
-    graphics_state, window_manager,
+    graphics_state,
 };
 
 pub struct GraphicsState {

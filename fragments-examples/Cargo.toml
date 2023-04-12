@@ -9,7 +9,7 @@ edition = "2021"
 flax.workspace = true
 fragments-core = { path = "../fragments-core" }
 fragments-glfw = { path = "../fragments-glfw" }
-fragments-wgpu = { path = "../wgpu/" }
+fragments-wgpu = { path = "../fragments-wgpu//" }
 
 parking_lot = "0.12"
 

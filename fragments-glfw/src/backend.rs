@@ -1,6 +1,5 @@
 use std::{borrow::Cow, sync::mpsc, time::Instant};
 
-use fragments_core::{effect::AppExecutor, events::EventBroadcaster, App, Backend};
 use futures::{channel::oneshot, Future};
 use glam::{uvec2, UVec2};
 use glfw::{Window, WindowEvent, WindowMode};

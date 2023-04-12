@@ -1,18 +1,16 @@
 use std::{
+    mem,
     pin::Pin,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc, Weak,
     },
-    task::{Context, Poll},
+    task::{Context, Poll, Waker},
 };
 
-use flax::World;
-use flume::{Receiver, Sender};
 use futures::task::{waker_ref, ArcWake};
+use parking_lot::Mutex;
 use slotmap::new_key_type;
-
-use crate::App;
 
 use super::Effect;
 
@@ -58,7 +56,7 @@ new_key_type! {
 
 struct TaskWaker {
     key: TaskKey,
-    pending: Sender<TaskKey>,
+    shared: Arc<Shared>,
     sent: AtomicBool,
 }
 
@@ -69,20 +67,20 @@ impl ArcWake for TaskWaker {
             .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
             .is_ok()
         {
-            arc_self.pending.send(arc_self.key).ok();
+            arc_self.shared.push_ready(arc_self.key);
         }
     }
 }
 
 /// Represents a unit of effect execution which runs using `C`
-pub(crate) struct Task {
-    effect: Pin<Box<dyn Effect<App>>>,
+pub(crate) struct Task<T> {
+    effect: Pin<Box<dyn Effect<T>>>,
 
     shared: Arc<SharedTaskData>,
 }
 
-impl Task {
-    pub(crate) fn new(effect: Pin<Box<dyn Effect<App>>>) -> (Task, TaskHandle) {
+impl<T> Task<T> {
+    pub(crate) fn new(effect: Pin<Box<dyn Effect<T>>>) -> (Task<T>, TaskHandle) {
         let shared = Arc::new(SharedTaskData {
             aborted: AtomicBool::new(false),
         });
@@ -96,7 +94,7 @@ impl Task {
         (task, handle)
     }
 
-    fn update(&mut self, waker: &Arc<TaskWaker>, app: &mut App) -> Poll<()> {
+    fn update(&mut self, waker: &Arc<TaskWaker>, state: &mut T) -> Poll<()> {
         if self.shared.aborted.load(Ordering::Relaxed) {
             return Poll::Ready(());
         }
@@ -106,7 +104,7 @@ impl Task {
 
         let effect = self.effect.as_mut();
 
-        if effect.poll_effect(app, &mut cx).is_ready() {
+        if effect.poll_effect(state, &mut cx).is_ready() {
             Poll::Ready(())
         } else {
             Poll::Pending
@@ -114,105 +112,130 @@ impl Task {
     }
 }
 
-/// Allows executing the app.
-///
-/// This allow executing the app, whereas the app only allows modification.
-///
-/// This is to avoid recursive updating, and enforcing an *ownership* of who can safely update the
-/// app, and who can only act upon it.
-pub struct AppExecutor {
-    app: App,
-    tasks: slotmap::SlotMap<TaskKey, (Task, Arc<TaskWaker>)>,
-    /// Tasks which are ready to be polled
-    pending_rx: Receiver<TaskKey>,
-    pending_tx: Sender<TaskKey>,
-    new_tasks_rx: Receiver<Task>,
+struct Shared {
+    /// Task which are ready to be polled again
+    ready: Mutex<Vec<TaskKey>>,
+    waker: Mutex<Option<Waker>>,
+    has_updates: AtomicBool,
 }
 
-impl std::ops::DerefMut for AppExecutor {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.app
+impl Shared {
+    pub fn push_ready(&self, key: TaskKey) {
+        self.ready.lock().push(key);
+        self.wake();
+    }
+
+    fn wake(&self) {
+        self.has_updates.store(true, Ordering::SeqCst);
+        if let Some(waker) = &mut *self.waker.lock() {
+            waker.wake_by_ref();
+        }
     }
 }
 
-impl std::ops::Deref for AppExecutor {
-    type Target = App;
-
-    fn deref(&self) -> &Self::Target {
-        &self.app
-    }
+/// Executes `Tasks`
+pub struct Executor<T> {
+    /// Tasks are stored inline
+    tasks: slotmap::SlotMap<TaskKey, (Task<T>, Arc<TaskWaker>)>,
+    new_tasks: Arc<Mutex<Vec<Task<T>>>>,
+    processing: Vec<TaskKey>,
+    shared: Arc<Shared>,
 }
 
-impl AppExecutor {
-    pub(crate) fn new(world: World) -> Self {
-        let (pending_tx, pending_rx) = flume::unbounded();
-        let (new_tasks_tx, new_tasks_rx) = flume::unbounded();
-
-        let spawner = TaskSpawner { tx: new_tasks_tx };
-
-        let app = App { world, spawner };
+impl<T> Executor<T> {
+    pub fn new() -> Self {
+        let shared = Arc::new(Shared {
+            ready: Default::default(),
+            waker: Default::default(),
+            has_updates: AtomicBool::new(false),
+        });
 
         Self {
-            app,
             tasks: Default::default(),
-            pending_rx,
-            pending_tx,
-            new_tasks_rx,
+            new_tasks: Default::default(),
+            processing: Default::default(),
+            shared,
         }
     }
 
-    /// Updates the app by executing all pending effects
-    pub fn update(&mut self) {
-        for new_task in self.new_tasks_rx.drain() {
+    /// Poll until there are tasks ready to update
+    pub fn poll_update(&mut self, cx: Context<'_>, state: &mut T) -> Poll<()> {
+        if self
+            .shared
+            .has_updates
+            .compare_exchange(true, false, Ordering::Acquire, Ordering::Relaxed)
+            .is_ok()
+        {
+            self.update(state);
+            Poll::Ready(())
+        } else {
+            *self.shared.waker.lock() = Some(cx.waker().clone());
+            Poll::Pending
+        }
+    }
+
+    pub fn spawner(&self) -> TaskSpawner<T> {
+        TaskSpawner {
+            shared: Arc::downgrade(&self.shared),
+            new_tasks: Arc::downgrade(&self.new_tasks.clone()),
+        }
+    }
+
+    /// Updates the executor, polling ready tasks using the provided state
+    pub fn update(&mut self, state: &mut T) {
+        self.shared.has_updates.store(false, Ordering::SeqCst);
+        mem::swap(&mut *self.shared.ready.lock(), &mut self.processing);
+
+        // Drain all new tasks and put them into the slotmap
+        for new_task in self.new_tasks.lock().drain(..) {
             let key = self.tasks.insert_with_key(|key| {
                 (
                     new_task,
                     Arc::new(TaskWaker {
                         key,
-                        pending: self.pending_tx.clone(),
+                        shared: self.shared.clone(),
                         sent: AtomicBool::new(false),
                     }),
                 )
             });
 
-            self.pending_tx.send(key).ok();
+            self.processing.push(key);
         }
 
-        for key in self.pending_rx.drain() {
+        for key in self.processing.drain(..) {
             let Some((task, waker)) = self.tasks.get_mut(key) else { continue; };
 
+            // Reset the waker so that it is ready to use again
             waker.sent.store(false, Ordering::SeqCst);
 
-            if task.update(waker, &mut self.app).is_ready() {
+            // Poll the task, removing the task if ready
+            if task.update(waker, state).is_ready() {
                 self.tasks.remove(key).unwrap();
             }
         }
-    }
-
-    pub fn app(&self) -> &App {
-        &self.app
-    }
-
-    pub fn app_mut(&mut self) -> &mut App {
-        &mut self.app
     }
 }
 
 /// Allows spawning tasks
 #[derive(Debug, Clone)]
-pub struct TaskSpawner {
-    tx: Sender<Task>,
+pub struct TaskSpawner<T> {
+    new_tasks: Weak<Mutex<Vec<Task<T>>>>,
+    shared: Weak<Shared>,
 }
 
-impl TaskSpawner {
+impl<T> TaskSpawner<T> {
     /// Spawns a new task.
     pub fn spawn<E>(&self, effect: E) -> TaskHandle
     where
-        E: 'static + Effect<App>,
+        E: 'static + Effect<T>,
     {
+        let shared = self.shared.upgrade().expect("No executor running");
+        let new_tasks = self.new_tasks.upgrade().expect("No executor running");
+
         let (task, handle) = Task::new(Box::pin(effect));
 
-        self.tx.send(task).expect("Executor is not running");
+        new_tasks.lock().push(task);
+        shared.wake();
 
         handle
     }
