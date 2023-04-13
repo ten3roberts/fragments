@@ -6,7 +6,7 @@ use crate::{effect::TaskSpawner, Scope, Widget};
 ///
 /// Similar to an Html *Document*
 pub struct Frame {
-    pub(crate) world: World,
+    pub world: World,
     /// Handle allowing spawning of tasks
     pub(crate) spawner: TaskSpawner<Frame>,
 }

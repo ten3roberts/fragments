@@ -24,18 +24,18 @@ impl EventState {
 
 pub type EventHandler<T> = Box<dyn 'static + FnMut(EntityRef, &T) + Send + Sync>;
 
-pub struct EventBroadcaster<T: 'static> {
+pub struct EventEmitter<T: 'static> {
     query: Query<(EntityRefs, Mutable<EventHandler<T>>)>,
 }
 
-impl<T> EventBroadcaster<T> {
+impl<T> EventEmitter<T> {
     pub fn new(event: Component<EventHandler<T>>) -> Self {
         Self {
             query: Query::new((entity_refs(), event.as_mut())),
         }
     }
     /// Broadcast an event to *all* listeners
-    pub fn broadcast(&mut self, world: &World, data: &T) {
+    pub fn emit(&mut self, world: &World, data: &T) {
         for (entity, handler) in &mut self.query.borrow(world) {
             handler(entity, data);
         }

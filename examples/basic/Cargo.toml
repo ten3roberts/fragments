@@ -10,6 +10,17 @@ anyhow.workspace = true
 
 fragments-wgpu = { path = "../../fragments-wgpu" }
 fragments-core = { path = "../../fragments-core" }
-tracing-subscriber = "0.3"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-tree = "0.2"
+tracing = "0.1"
 
+tokio = { version = "1.0", features = [
+    "rt-multi-thread",
+    "sync",
+    "macros",
+    "parking_lot",
+    "time",
+] }
+tokio-stream = "0.1"
+tokio-utils = "0.1.2"
+futures = "0.3"

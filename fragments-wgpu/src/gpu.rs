@@ -3,7 +3,7 @@ use winit::{dpi::PhysicalSize, window::Window};
 
 /// Represents the Gpu and graphics state
 pub struct Gpu {
-    surface: wgpu::Surface,
+    pub surface: wgpu::Surface,
     adapter: Adapter,
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,

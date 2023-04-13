@@ -21,6 +21,12 @@ pub struct Scope<'a> {
     frame: &'a mut Frame,
 }
 
+impl<'a> std::fmt::Debug for Scope<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Scope").field("id", &self.id).finish()
+    }
+}
+
 impl<'a> Scope<'a> {
     /// Creates a new scope
     pub(crate) fn spawn(frame: &'a mut Frame) -> Self {
@@ -40,7 +46,7 @@ impl<'a> Scope<'a> {
     pub fn use_future<Fut, F>(&mut self, fut: Fut, func: F)
     where
         Fut: 'static + Future,
-        F: 'static + FnMut(&mut Scope<'_>, Fut::Output),
+        F: 'static + FnOnce(&mut Scope<'_>, Fut::Output),
     {
         self.use_effect(FutureEffect::new(fut, func))
     }
@@ -128,11 +134,12 @@ impl<'a> Scope<'a> {
     pub fn attach<W: Widget>(&mut self, widget: W) -> Entity {
         let id = self.id;
         let mut child_scope = Scope::spawn(self.frame);
-        child_scope.set(child_of(self.id), ());
-        let id = child_scope.id();
+        let child_id = child_scope.id();
+        tracing::info!("Attaching {child_id} to {id}");
+        child_scope.set(child_of(id), ());
 
         widget.render(&mut child_scope);
-        id
+        child_id
     }
 
     /// Returns the entity id
@@ -154,6 +161,14 @@ impl<'a> Scope<'a> {
             .world
             .entity_mut(self.id)
             .expect("Entity was despawned")
+    }
+
+    pub fn frame_mut(&mut self) -> &mut &'a mut Frame {
+        &mut self.frame
+    }
+
+    pub fn frame(&self) -> &&'a mut Frame {
+        &self.frame
     }
 }
 
