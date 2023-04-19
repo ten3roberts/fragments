@@ -52,8 +52,9 @@ impl App {
         let mut on_resize = EventEmitter::new(on_resize());
         event_loop.run(move |event, _, ctl| match event {
             Event::MainEventsCleared => {
+                // tracing::info!("Updating executor");
                 executor.update(&mut frame);
-                on_redraw.emit(&frame.world, &());
+                // on_redraw.emit(&frame.world, &());
             }
             Event::WindowEvent { window_id, event } => match event {
                 winit::event::WindowEvent::CloseRequested => {

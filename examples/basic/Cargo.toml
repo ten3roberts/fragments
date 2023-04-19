@@ -24,3 +24,4 @@ tokio = { version = "1.0", features = [
 tokio-stream = "0.1"
 tokio-utils = "0.1.2"
 futures = "0.3"
+closure = "0.3"

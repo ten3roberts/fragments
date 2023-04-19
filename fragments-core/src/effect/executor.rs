@@ -104,11 +104,7 @@ impl<T> Task<T> {
 
         let effect = self.effect.as_mut();
 
-        if effect.poll_effect(state, &mut cx).is_ready() {
-            Poll::Ready(())
-        } else {
-            Poll::Pending
-        }
+        effect.poll_effect(state, &mut cx)
     }
 }
 
@@ -183,8 +179,14 @@ impl<T> Executor<T> {
 
     /// Updates the executor, polling ready tasks using the provided state
     pub fn update(&mut self, state: &mut T) {
-        self.shared.has_updates.store(false, Ordering::SeqCst);
-        mem::swap(&mut *self.shared.ready.lock(), &mut self.processing);
+        // tracing::info!("Swapping processing");
+
+        {
+            let mut ready = self.shared.ready.lock();
+            self.shared.has_updates.store(false, Ordering::SeqCst);
+
+            mem::swap(&mut *ready, &mut self.processing);
+        }
 
         // Drain all new tasks and put them into the slotmap
         for new_task in self.new_tasks.lock().drain(..) {
@@ -203,7 +205,9 @@ impl<T> Executor<T> {
         }
 
         for key in self.processing.drain(..) {
-            let Some((task, waker)) = self.tasks.get_mut(key) else { continue; };
+            let Some((task, waker)) = self.tasks.get_mut(key) else {
+                tracing::warn!("No such task");
+                continue; };
 
             // Reset the waker so that it is ready to use again
             waker.sent.store(false, Ordering::SeqCst);
@@ -229,10 +233,14 @@ impl<T> TaskSpawner<T> {
     where
         E: 'static + Effect<T>,
     {
+        self.spawn_boxed(Box::pin(effect))
+    }
+
+    pub fn spawn_boxed(&self, effect: Pin<Box<dyn Effect<T>>>) -> TaskHandle {
         let shared = self.shared.upgrade().expect("No executor running");
         let new_tasks = self.new_tasks.upgrade().expect("No executor running");
 
-        let (task, handle) = Task::new(Box::pin(effect));
+        let (task, handle) = Task::new(effect);
 
         new_tasks.lock().push(task);
         shared.wake();

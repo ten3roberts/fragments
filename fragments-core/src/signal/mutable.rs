@@ -166,7 +166,6 @@ where
                 Poll::Pending
             }
         } else {
-            eprintln!("No state");
             Poll::Ready(None)
         }
     }

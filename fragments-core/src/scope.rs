@@ -135,7 +135,6 @@ impl<'a> Scope<'a> {
         let id = self.id;
         let mut child_scope = Scope::spawn(self.frame);
         let child_id = child_scope.id();
-        tracing::info!("Attaching {child_id} to {id}");
         child_scope.set(child_of(id), ());
 
         widget.render(&mut child_scope);
@@ -169,6 +168,11 @@ impl<'a> Scope<'a> {
 
     pub fn frame(&self) -> &&'a mut Frame {
         &self.frame
+    }
+
+    /// Detaches a child from the current scope
+    pub fn detach(&mut self, id: Entity) {
+        self.frame.world.despawn_recursive(id, child_of).unwrap();
     }
 }
 

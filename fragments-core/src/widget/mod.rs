@@ -13,14 +13,14 @@ pub trait Widget: BoxedWidget {
     fn render(self, scope: &mut Scope);
 }
 
-impl<F> Widget for F
-where
-    F: FnOnce(&mut Scope<'_>),
-{
-    fn render(mut self, scope: &mut Scope) {
-        (self)(scope)
-    }
-}
+// impl<F> Widget for F
+// where
+//     F: FnOnce(&mut Scope<'_>),
+// {
+//     fn render(mut self, scope: &mut Scope) {
+//         (self)(scope)
+//     }
+// }
 
 pub struct Fragment {
     data: EntityBuilder,

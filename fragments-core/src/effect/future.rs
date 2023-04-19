@@ -36,14 +36,15 @@ where
     Fut: Future,
     F: FnOnce(&mut Data, Fut::Output),
 {
-    fn poll_effect(self: Pin<&mut Self>, ctx: &mut Data, async_cx: &mut Context<'_>) -> Poll<()> {
+    fn poll_effect(self: Pin<&mut Self>, ctx: &mut Data, cx: &mut Context<'_>) -> Poll<()> {
         let p = self.project();
         let mut fut = p.fut;
-        if let Poll::Ready(item) = fut.poll_unpin(async_cx) {
+        if let Poll::Ready(item) = fut.poll_unpin(cx) {
             let func = p.func.take().unwrap();
             (func)(ctx, item);
             Poll::Ready(())
         } else {
+            tracing::info!("Inner future not ready");
             Poll::Pending
         }
     }

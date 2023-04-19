@@ -18,7 +18,7 @@ use std::{
 ///
 /// This can be the app as a whole, or a scope.
 pub trait Effect<Data> {
-    fn poll_effect(self: Pin<&mut Self>, data: &mut Data, async_cx: &mut Context<'_>) -> Poll<()>;
+    fn poll_effect(self: Pin<&mut Self>, data: &mut Data, cx: &mut Context<'_>) -> Poll<()>;
 }
 
 /// Convert any [`futures::Stream`] into an effect which executes for each item
