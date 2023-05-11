@@ -39,12 +39,13 @@ where
     fn poll_effect(self: Pin<&mut Self>, ctx: &mut Data, cx: &mut Context<'_>) -> Poll<()> {
         let p = self.project();
         let mut fut = p.fut;
+        let _span = tracing::info_span!("Polling future").entered();
         if let Poll::Ready(item) = fut.poll_unpin(cx) {
             let func = p.func.take().unwrap();
             (func)(ctx, item);
+            tracing::info!("Future completed");
             Poll::Ready(())
         } else {
-            tracing::info!("Inner future not ready");
             Poll::Pending
         }
     }

@@ -6,6 +6,7 @@ use std::{
         Arc, Weak,
     },
     task::{Context, Poll, Waker},
+    time::Duration,
 };
 
 use futures::task::{waker_ref, ArcWake};
@@ -25,22 +26,23 @@ pub struct TaskHandle {
 
 impl TaskHandle {
     pub fn abort_on_drop(self) -> AbortTaskHandle {
-        AbortTaskHandle {
-            shared: self.shared,
+        AbortTaskHandle(self)
+    }
+
+    /// Aborts the task remotely
+    pub fn abort(&self) {
+        if let Some(shared) = self.shared.upgrade() {
+            shared.aborted.store(true, Ordering::SeqCst)
         }
     }
 }
 
 /// Variant of a task handle which aborts the task when dropped
-pub struct AbortTaskHandle {
-    shared: Weak<SharedTaskData>,
-}
+pub struct AbortTaskHandle(TaskHandle);
 
 impl AbortTaskHandle {
     fn abort(&self) {
-        if let Some(shared) = self.shared.upgrade() {
-            shared.aborted.store(true, Ordering::SeqCst)
-        }
+        self.abort()
     }
 }
 
@@ -68,6 +70,8 @@ impl ArcWake for TaskWaker {
             .is_ok()
         {
             arc_self.shared.push_ready(arc_self.key);
+        } else {
+            tracing::info!("Task already woken");
         }
     }
 }
@@ -96,6 +100,7 @@ impl<T> Task<T> {
 
     fn update(&mut self, waker: &Arc<TaskWaker>, state: &mut T) -> Poll<()> {
         if self.shared.aborted.load(Ordering::Relaxed) {
+            tracing::info!("Task aborted remotely");
             return Poll::Ready(());
         }
 
@@ -179,8 +184,6 @@ impl<T> Executor<T> {
 
     /// Updates the executor, polling ready tasks using the provided state
     pub fn update(&mut self, state: &mut T) {
-        // tracing::info!("Swapping processing");
-
         {
             let mut ready = self.shared.ready.lock();
             self.shared.has_updates.store(false, Ordering::SeqCst);
@@ -217,14 +220,23 @@ impl<T> Executor<T> {
                 self.tasks.remove(key).unwrap();
             }
         }
+        std::thread::sleep(Duration::from_millis(100));
     }
 }
 
 /// Allows spawning tasks
-#[derive(Debug, Clone)]
 pub struct TaskSpawner<T> {
     new_tasks: Weak<Mutex<Vec<Task<T>>>>,
     shared: Weak<Shared>,
+}
+
+impl<T> Clone for TaskSpawner<T> {
+    fn clone(&self) -> Self {
+        Self {
+            new_tasks: self.new_tasks.clone(),
+            shared: self.shared.clone(),
+        }
+    }
 }
 
 impl<T> TaskSpawner<T> {

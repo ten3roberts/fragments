@@ -1,20 +1,22 @@
 use std::{
+    pin::Pin,
     sync::{
         atomic::{AtomicBool, Ordering},
         Weak,
     },
-    task::Waker as AsyncWaker,
+    task::{Context, Poll, Waker as AsyncWaker},
 };
 
 use parking_lot::Mutex;
 
-pub(crate) struct Waiter {
+/// Abstraction over the most recent async waker and changed flag
+pub(crate) struct Hook {
     changed: AtomicBool,
     // Method to use to signal the change
     waker: Mutex<Option<AsyncWaker>>,
 }
 
-impl Waiter {
+impl Hook {
     pub fn new(initial_changed: bool) -> Self {
         Self {
             changed: AtomicBool::new(initial_changed),
@@ -23,7 +25,7 @@ impl Waiter {
     }
 }
 
-impl Waiter {
+impl Hook {
     pub fn take_changed(&self) -> bool {
         self.changed
             .compare_exchange(true, false, Ordering::Acquire, Ordering::Relaxed)
@@ -43,17 +45,21 @@ impl Waiter {
 }
 
 #[derive(Default)]
-pub(crate) struct WaitList {
-    inner: Vec<Weak<Waiter>>,
+pub(crate) struct HookList {
+    inner: Mutex<Vec<Weak<Hook>>>,
 }
 
-impl WaitList {
-    pub fn push(&mut self, value: Weak<Waiter>) {
-        self.inner.push(value)
+impl HookList {
+    pub fn push(&self, value: Weak<Hook>) {
+        let mut inner = self.inner.lock();
+
+        inner.push(value);
+        inner.retain(|v| v.strong_count() > 0);
     }
 
-    pub fn wake_all(&mut self) {
-        self.inner.retain(|v| {
+    /// Invokes all hooks
+    pub fn wake_all(&self) {
+        self.inner.lock().retain(|v| {
             if let Some(w) = v.upgrade() {
                 w.wake();
                 true

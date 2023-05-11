@@ -7,10 +7,8 @@ use crate::Scope;
 ///
 /// When a widget is rendered it will attach its state and functionality to a node in the UI.
 pub trait Widget: BoxedWidget {
-    /// Puts the widget into the world in the given scope.
-    ///
-    /// The scope is used to spawn tasks which update the state.
-    fn render(self, scope: &mut Scope);
+    /// Mount the widget by attaching data and functionality within the supplied scope
+    fn mount(self, scope: &mut Scope<'_>);
 }
 
 // impl<F> Widget for F
@@ -34,21 +32,21 @@ impl Fragment {
 
 /// Allow calling the consuming widget on a boxed trait object
 pub trait BoxedWidget {
-    fn render_boxed(self: Box<Self>, scope: &mut Scope);
+    fn mount_boxed(self: Box<Self>, scope: &mut Scope);
 }
 
 impl<W> BoxedWidget for W
 where
     W: Widget,
 {
-    fn render_boxed(self: Box<Self>, scope: &mut Scope) {
-        (*self).render(scope)
+    fn mount_boxed(self: Box<Self>, scope: &mut Scope) {
+        (*self).mount(scope)
     }
 }
 
 impl Widget for Box<dyn Widget> {
-    fn render(self, scope: &mut Scope) {
-        self.render_boxed(scope)
+    fn mount(self, scope: &mut Scope) {
+        self.mount_boxed(scope)
     }
 }
 
@@ -97,3 +95,6 @@ macro_rules! tuple_impl {
 tuple_impl! { 0 => A }
 tuple_impl! { 0 => A, 1 => B }
 tuple_impl! { 0 => A, 1 => B, 2 => C }
+tuple_impl! { 0 => A, 1 => B, 2 => C, 3 => D }
+tuple_impl! { 0 => A, 1 => B, 2 => C, 3 => D, 4 => E }
+tuple_impl! { 0 => A, 1 => B, 2 => C, 3 => D, 4 => E, 5 => F }

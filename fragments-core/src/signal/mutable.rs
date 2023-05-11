@@ -8,10 +8,10 @@ use std::{
     task::{Context, Poll},
 };
 
-use parking_lot::{self, Mutex, MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use parking_lot::{self, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use super::{
-    waiter::{WaitList, Waiter},
+    waiter::{Hook, HookList},
     Signal,
 };
 
@@ -25,16 +25,18 @@ impl<T> Mutable<T> {
             inner: Arc::new(MutableInner {
                 value: RwLock::new(value),
                 mutable_count: AtomicUsize::new(1),
-                waiters: Default::default(),
+                hooks: Default::default(),
             }),
         }
     }
 
     pub fn write(&self) -> MutableWriteGuard<T> {
         let value = self.inner.value.write();
+
         let wake_on_drop = WakeOnDrop {
-            waiters: self.inner.waiters.lock(),
+            waiters: &self.inner.hooks,
         };
+
         MutableWriteGuard {
             value,
             _wake_on_drop: wake_on_drop,
@@ -46,7 +48,7 @@ impl<T> Drop for Mutable<T> {
     fn drop(&mut self) {
         let count = self.inner.mutable_count.fetch_sub(1, Ordering::Relaxed);
         if count == 1 {
-            self.inner.waiters.lock().wake_all();
+            self.inner.hooks.wake_all();
         }
     }
 }
@@ -72,7 +74,7 @@ where
 }
 
 struct WakeOnDrop<'a> {
-    waiters: MutexGuard<'a, WaitList>,
+    waiters: &'a HookList,
 }
 
 impl<'a> Drop for WakeOnDrop<'a> {
@@ -115,12 +117,16 @@ impl<'a, T> std::ops::Deref for MutableReadGuard<'a, T> {
 struct MutableInner<T> {
     mutable_count: AtomicUsize,
     value: RwLock<T>,
-    waiters: Mutex<WaitList>,
+    // List of registered signals
+    //
+    // Remains for the entire lifetime of the signal so that updates are not missed between sparse
+    // polls
+    hooks: HookList,
 }
 
 impl<T> Mutable<T> {
     pub fn signal(&self) -> MutableSignal<T> {
-        let waker = Arc::new(Waiter::new(true));
+        let waker = Arc::new(Hook::new(true));
         self.push_waiter(Arc::downgrade(&waker));
 
         MutableSignal {
@@ -130,7 +136,7 @@ impl<T> Mutable<T> {
     }
 
     pub fn signal_ref(&self) -> MutableSignalRef<T> {
-        let waker = Arc::new(Waiter::new(true));
+        let waker = Arc::new(Hook::new(true));
         self.push_waiter(Arc::downgrade(&waker));
 
         MutableSignalRef {
@@ -139,13 +145,13 @@ impl<T> Mutable<T> {
         }
     }
 
-    fn push_waiter(&self, waiter: Weak<Waiter>) {
-        self.inner.waiters.lock().push(waiter)
+    fn push_waiter(&self, waiter: Weak<Hook>) {
+        self.inner.hooks.push(waiter)
     }
 }
 
 pub struct MutableSignal<T> {
-    waiter: Arc<Waiter>,
+    waiter: Arc<Hook>,
     state: Weak<MutableInner<T>>,
 }
 
@@ -172,7 +178,7 @@ where
 }
 
 pub struct MutableSignalRef<T> {
-    waker: Arc<Waiter>,
+    waker: Arc<Hook>,
     /// Using a `Weak` here is not possible as a lock needs to be returned
     state: Option<Arc<MutableInner<T>>>,
 }

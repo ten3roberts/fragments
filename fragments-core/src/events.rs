@@ -3,8 +3,6 @@ use flax::{
     Component, Entity, EntityRef, Mutable, Query, World,
 };
 
-use crate::components::ordered_children;
-
 #[derive(Default, PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
 pub enum EventState {
     #[default]

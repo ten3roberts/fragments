@@ -1,6 +1,7 @@
 pub mod hold;
 mod map;
 mod mutable;
+mod notify;
 mod waiter;
 
 pub use map::*;

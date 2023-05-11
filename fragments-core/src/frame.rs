@@ -18,6 +18,6 @@ impl Frame {
 
     pub fn spawn_root(&mut self, widget: impl Widget) {
         let mut scope = Scope::spawn(self);
-        widget.render(&mut scope);
+        widget.mount(&mut scope);
     }
 }

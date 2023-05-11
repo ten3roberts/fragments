@@ -4,6 +4,7 @@ mod components;
 pub mod error;
 pub mod events;
 pub mod gpu;
+pub mod graphics;
 pub mod mesh;
 mod renderer;
 mod typed_buffer;

@@ -1,8 +1,3 @@
-use std::{
-    any::{type_name, Any, TypeId},
-    collections::HashMap,
-};
-
 use flax::{Component, ComponentValue};
 
 /// Allows accessing a context value

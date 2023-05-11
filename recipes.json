@@ -1,7 +1,21 @@
 {
-  "run": "run-winit",
-  "check": { "cmd": "cargo check --workspace" },
-  "run-winit": { "cmd": "cargo run --example winit" },
-  "run-glfw": { "cmd": "cargo run --example glfw" },
-  "test": { "cmd": "cargo nextest run" }
+    "run": "run-winit",
+    "check": {
+        "cmd": "cargo check --workspace"
+    },
+    "run-winit": {
+        "cmd": "cargo run --example winit"
+    },
+    "test": {
+        "cmd": "cargo nextest run"
+    },
+    "debug-basic": {
+        "cmd": "cargo build --package basic --bin basic",
+        "components": {
+            "dap": {
+                "program": "./target/debug/basic",
+                "adapter": "rust"
+            }
+        }
+    }
 }

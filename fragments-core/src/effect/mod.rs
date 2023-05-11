@@ -16,7 +16,7 @@ use std::{
 
 /// Represents an asynchronous computation which has access some short lived context when polling.
 ///
-/// This can be the app as a whole, or a scope.
+/// Similar to a Future with an extra data parameter available when polling.
 pub trait Effect<Data> {
     fn poll_effect(self: Pin<&mut Self>, data: &mut Data, cx: &mut Context<'_>) -> Poll<()>;
 }
