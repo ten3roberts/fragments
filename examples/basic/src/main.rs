@@ -33,7 +33,7 @@ impl Widget for DebugWorld {
     #[tracing::instrument(level = "info", skip(scope))]
     fn mount(self, scope: &mut Scope) {
         scope.create_effect(StreamEffect::new(
-            IntervalStream::new(interval(Duration::from_millis(101))),
+            IntervalStream::new(interval(Duration::from_millis(50))),
             |s: &mut Scope, _| {
                 let frame = s.frame();
                 tracing::info!("World: {:#?}", frame.world);
@@ -84,7 +84,7 @@ async fn main() -> anyhow::Result<()> {
         )
         .init();
 
-    AppBuilder::new().build().run(App {})
+    tokio::task::block_in_place(|| AppBuilder::new().build().run(App {}))
 }
 
 #[tracing::instrument(level = "info")]

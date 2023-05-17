@@ -7,6 +7,7 @@ pub mod fragment;
 pub mod frame;
 mod scope;
 pub mod signal;
+pub mod time;
 mod widget;
 
 pub use scope::*;
