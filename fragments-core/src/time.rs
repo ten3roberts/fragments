@@ -16,22 +16,19 @@ use futures::{
     task::{noop_waker, ArcWake},
     Future,
 };
-use once_cell::sync::OnceCell;
+use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use pin_project::{pin_project, pinned_drop};
 use slotmap::new_key_type;
 
-pub static GLOBAL_TIMER: OnceCell<TimersHandle> = OnceCell::new();
+pub static GLOBAL_TIMER: Lazy<TimersHandle> = Lazy::new(Timers::start);
 
 pub fn sleep_until(deadline: Instant) -> Sleep {
-    Sleep::new(GLOBAL_TIMER.get().expect("No timers"), deadline)
+    Sleep::new(&GLOBAL_TIMER, deadline)
 }
 
 pub fn sleep(duration: Duration) -> Sleep {
-    Sleep::new(
-        GLOBAL_TIMER.get().expect("No timers"),
-        Instant::now() + duration,
-    )
+    Sleep::new(&GLOBAL_TIMER, Instant::now() + duration)
 }
 
 struct TimerEntry {
@@ -128,10 +125,12 @@ impl Timers {
         None
     }
 
-    pub fn set_global_timer(&self) {
-        if GLOBAL_TIMER.set(self.handle()).is_err() {
-            panic!("Global timer already set")
-        }
+    /// Starts executing the timers in the background
+    pub fn start() -> TimersHandle {
+        let timers = Timers::new();
+        let handle = timers.handle();
+        std::thread::spawn(move || timers.run_blocking());
+        handle
     }
 
     pub fn run_blocking(mut self) {
@@ -268,7 +267,7 @@ pub(crate) fn assert_dur(found: Duration, expected: Duration, msg: &str) {
 mod test {
     use std::{eprintln, time::Duration};
 
-    use futures::FutureExt;
+    use futures::{stream, FutureExt, StreamExt};
 
     use super::*;
 
@@ -276,20 +275,20 @@ mod test {
     fn sleep() {
         let timers = Timers::new();
 
-        let shared = timers.handle();
+        let handle = timers.handle();
 
         thread::spawn(move || timers.run_blocking());
 
         let now = Instant::now();
         futures::executor::block_on(async move {
-            Sleep::new(&shared, Instant::now() + Duration::from_millis(500)).await;
+            Sleep::new(&handle, Instant::now() + Duration::from_millis(500)).await;
 
             eprintln!("Timer 1 finished");
 
             let now = Instant::now();
-            Sleep::new(&shared, Instant::now() + Duration::from_millis(1000)).await;
+            Sleep::new(&handle, Instant::now() + Duration::from_millis(1000)).await;
 
-            Sleep::new(&shared, now - Duration::from_millis(100)).await;
+            Sleep::new(&handle, now - Duration::from_millis(100)).await;
 
             eprintln!("Expired timer finished")
         });
@@ -356,6 +355,34 @@ mod test {
         });
 
         assert_dur(now.elapsed(), Duration::from_millis(2000), "race");
+
+        eprintln!("Done");
+    }
+
+    #[test]
+    fn sleep_identical() {
+        let timers = Timers::new();
+
+        let handle = timers.handle();
+
+        thread::spawn(move || timers.run_blocking());
+
+        let now = Instant::now();
+        futures::executor::block_on(async move {
+            let deadline = now + Duration::from_millis(500);
+            stream::iter(
+                (0..100)
+                    .map(|_| Sleep::new(&handle, deadline))
+                    .collect::<Vec<_>>(),
+            )
+            .buffered(2048)
+            .for_each(|_| async {
+                // Sleep::new(&handle, Instant::now() + Duration::from_millis(100)).await;
+            })
+            .await;
+        });
+
+        assert_dur(now.elapsed(), Duration::from_millis(500), "seq");
 
         eprintln!("Done");
     }

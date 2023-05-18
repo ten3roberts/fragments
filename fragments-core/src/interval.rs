@@ -7,7 +7,15 @@ use std::{
 use futures::{ready, Future, Stream};
 use pin_project::pin_project;
 
-use crate::time::{Sleep, TimersHandle};
+use crate::time::{Sleep, TimersHandle, GLOBAL_TIMER};
+
+pub fn interval(period: Duration) -> Interval {
+    Interval::new(&GLOBAL_TIMER, Instant::now(), period)
+}
+
+pub fn interval_at(start: Instant, period: Duration) -> Interval {
+    Interval::new(&GLOBAL_TIMER, start, period)
+}
 
 /// Ticks at a fixed interval.
 #[pin_project]
@@ -59,7 +67,6 @@ mod test {
     use std::thread;
 
     use futures::StreamExt;
-    use itertools::Itertools;
 
     use crate::time::{assert_dur, Timers};
 
