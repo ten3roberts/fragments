@@ -7,7 +7,6 @@ pub mod gpu;
 pub mod graphics;
 pub mod mesh;
 mod renderer;
-mod typed_buffer;
 // pub mod state;
 
 pub use components::*;

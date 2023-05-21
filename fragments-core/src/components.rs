@@ -1,5 +1,4 @@
 use flax::*;
-use glam::Vec2;
 
 use crate::effect::TaskHandle;
 
@@ -33,7 +32,4 @@ component! {
 
     pub text: String => [ Debuggable ],
     pub resources,
-
-    pub position: Vec2 => [ Debuggable ],
-    pub size: Vec2 => [ Debuggable ],
 }

@@ -5,7 +5,7 @@ mod error;
 pub mod events;
 pub mod fragment;
 pub mod frame;
-pub mod interval;
+pub mod layout;
 mod scope;
 pub mod signal;
 pub mod time;

@@ -21,8 +21,7 @@ pub fn interval_at(start: Instant, period: Duration) -> Interval {
 #[pin_project]
 #[derive(Debug)]
 pub struct Interval {
-    #[pin]
-    sleep: Sleep,
+    sleep: Pin<Box<Sleep>>,
     period: Duration,
 }
 
@@ -30,25 +29,27 @@ impl Interval {
     /// Creates a new interval which will fire at `start` and then every `period` duration.
     pub fn new(handle: &TimersHandle, start: Instant, period: Duration) -> Self {
         Self {
-            sleep: Sleep::new(handle, start),
+            sleep: Box::pin(Sleep::new(handle, start)),
             period,
         }
     }
 
-    pub fn poll_tick(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Instant> {
-        let mut p = self.project();
+    pub async fn tick(&mut self) -> Instant {
+        futures::future::poll_fn(move |cx| self.poll_tick(cx)).await
+    }
 
-        let deadline = p.sleep.deadline();
+    pub fn poll_tick(&mut self, cx: &mut Context<'_>) -> Poll<Instant> {
+        let deadline = self.sleep.deadline();
 
         // Wait until the next tick
-        ready!(p.sleep.as_mut().poll(cx));
+        ready!(self.sleep.as_mut().poll(cx));
 
         // Calculate the next deadline
-        let new_deadline = deadline + *p.period;
+        let new_deadline = deadline + self.period;
 
         // Reset the timer
         // Note: will not be registered until the interval is polled again
-        p.sleep.reset(new_deadline);
+        self.sleep.as_mut().reset(new_deadline);
 
         Poll::Ready(deadline)
     }
@@ -57,7 +58,7 @@ impl Interval {
 impl Stream for Interval {
     type Item = Instant;
 
-    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         self.poll_tick(cx).map(Some)
     }
 }

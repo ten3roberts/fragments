@@ -8,6 +8,7 @@ use wgpu::{
 
 use crate::gpu::Gpu;
 
+/// Type safe buffer
 pub struct TypedBuffer<T> {
     buffer: Buffer,
     len: usize,
@@ -45,7 +46,7 @@ where
     }
 
     pub fn write(&self, queue: &Queue, data: &[T]) {
-        assert_eq!(self.len(), data.len());
+        assert!(self.len() >= data.len());
         queue.write_buffer(self, 0, bytemuck::cast_slice(data));
     }
 }

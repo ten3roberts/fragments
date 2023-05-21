@@ -1,77 +1,100 @@
-use flax::{
-    fetch::{entity_refs, EntityRefs},
-    Component, Entity, EntityRef, Mutable, Query, World,
+use std::{
+    any::{Any, TypeId},
+    collections::BTreeMap,
 };
 
-#[derive(Default, PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
-pub enum EventState {
-    #[default]
-    Pending,
-    Handled,
-}
+use dashmap::DashMap;
+use flax::Component;
 
-impl EventState {
-    /// Returns `true` if the event state is [`Handled`].
+use crate::frame::Frame;
+
+pub trait EventHandler<T> {
+    /// Handles an event
     ///
-    /// [`Handled`]: EventState::Handled
-    #[must_use]
-    fn is_handled(&self) -> bool {
-        matches!(self, Self::Handled)
+    /// Returns `true` if the handler should be kept, `false` if it should be removed
+    fn on_event(&mut self, frame: &mut Frame, event: &T) -> bool;
+}
+
+impl<F, T> EventHandler<T> for F
+where
+    F: FnMut(&mut Frame, &T) -> bool,
+{
+    fn on_event(&mut self, frame: &mut Frame, event: &T) -> bool {
+        (self)(frame, event)
     }
 }
 
-pub type EventHandler<T> = Box<dyn 'static + FnMut(EntityRef, &T) + Send + Sync>;
-
-pub struct EventEmitter<T: 'static> {
-    query: Query<(EntityRefs, Mutable<EventHandler<T>>)>,
+impl<T: Clone> EventHandler<T> for flume::Sender<T> {
+    fn on_event(&mut self, _frame: &mut Frame, event: &T) -> bool {
+        self.send(event.clone()).is_ok()
+    }
 }
 
-impl<T> EventEmitter<T> {
-    pub fn new(event: Component<EventHandler<T>>) -> Self {
+/// Stores all the handlers for an event of a specific type
+pub struct EventDispatcher<T> {
+    handlers: Vec<Box<dyn EventHandler<T>>>,
+}
+
+impl<T> std::fmt::Debug for EventDispatcher<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EventDispatcher")
+            .field("handlers", &self.handlers.len())
+            .finish()
+    }
+}
+
+impl<T> Default for EventDispatcher<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<T> EventDispatcher<T> {
+    pub fn new() -> Self {
         Self {
-            query: Query::new((entity_refs(), event.as_mut())),
+            handlers: Vec::new(),
         }
     }
-    /// Broadcast an event to *all* listeners
-    pub fn emit(&mut self, world: &World, data: &T) {
-        for (entity, handler) in &mut self.query.borrow(world) {
-            handler(entity, data);
-        }
+
+    pub fn register(&mut self, handler: Box<dyn EventHandler<T>>) {
+        self.handlers.push(handler);
+    }
+
+    /// Emits an event to all handlers
+    pub fn emit(&mut self, frame: &mut Frame, event: &T) {
+        self.handlers
+            .retain_mut(|handler| handler.on_event(frame, event));
     }
 }
 
-///// Send an event down the tree, returning true if the event was handle by any node.
-/////
-///// Shortcuts for the first entity which could handle the event, in depth-first order.
-//#[inline]
-//#[tracing::instrument(level = "info", skip(world, event_data))]
-//pub fn send_event<T: 'static>(
-//    world: &World,
-//    id: Entity,
-//    event_kind: Component<EventHandler<T>>,
-//    event_data: &T,
-//) -> EventState {
-//    let Ok( entity ) = world.entity(id) else { return EventState::Pending };
-//    tracing::info!("Sending events to: {entity:?}");
+/// Registry for global events
+#[derive(Default, Debug)]
+pub struct EventRegistry {
+    dispatchers: DashMap<TypeId, Box<dyn Any>>,
+}
 
-//    if let Ok(mut listener) = entity.get_mut(event_kind) {
-//        let resp = (listener)(entity, event_data);
-//        if resp.is_handled() {
-//            return EventState::Handled;
-//        }
-//    }
+impl EventRegistry {
+    pub fn new() -> Self {
+        Default::default()
+    }
 
-//    for &id in entity
-//        .get(ordered_children())
-//        .as_deref()
-//        .into_iter()
-//        .flatten()
-//    {
-//        let resp = send_event(world, id, event_kind, event_data);
-//        if resp.is_handled() {
-//            return resp;
-//        }
-//    }
+    /// Subscribe to a global event
+    pub fn register<T: 'static>(&self, handler: Box<dyn EventHandler<T>>) {
+        self.dispatchers
+            .entry(TypeId::of::<T>())
+            .or_insert_with(|| Box::new(EventDispatcher::<T>::new()))
+            .downcast_mut::<EventDispatcher<T>>()
+            .unwrap()
+            .register(handler);
+    }
 
-//    EventState::Pending
-//}
+    /// Emits a global event to all listeners
+    pub fn emit<T: 'static>(&self, frame: &mut Frame, event: &T) {
+        if let Some(mut dispatcher) = self.dispatchers.get_mut(&TypeId::of::<T>()) {
+            dispatcher
+                .downcast_mut::<EventDispatcher<T>>()
+                .unwrap()
+                .emit(frame, event);
+        }
+    }
+}

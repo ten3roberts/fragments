@@ -220,7 +220,6 @@ impl<T> Executor<T> {
                 self.tasks.remove(key).unwrap();
             }
         }
-        std::thread::sleep(Duration::from_millis(100));
     }
 }
 

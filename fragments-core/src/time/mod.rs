@@ -20,6 +20,9 @@ use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use pin_project::{pin_project, pinned_drop};
 use slotmap::new_key_type;
+mod interval;
+
+pub use interval::{interval, interval_at, Interval};
 
 pub static GLOBAL_TIMER: Lazy<TimersHandle> = Lazy::new(Timers::start);
 
@@ -70,12 +73,10 @@ impl Inner {
     pub fn register(&mut self, deadline: Instant, timer: *const TimerEntry) {
         self.heap.insert(Entry { deadline, timer });
 
-        eprintln!("Waking timers");
         self.waker.wake_by_ref();
     }
 
     fn remove(&mut self, deadline: Instant, timer: *const TimerEntry) {
-        eprintln!("Removing timer {deadline:?}");
         self.heap.remove(&Entry { deadline, timer });
     }
 }
@@ -107,7 +108,6 @@ impl Timers {
         while let Some(entry) = shared.heap.first() {
             // All deadlines before now have been handled
             if entry.deadline > time {
-                eprintln!("Next deadline in {:?}", entry.deadline - time);
                 return Some(entry.deadline);
             }
 

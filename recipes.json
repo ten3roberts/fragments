@@ -17,5 +17,16 @@
                 "adapter": "rust"
             }
         }
+    },
+    "run basic": {
+        "cmd": [
+            "cargo",
+            "run",
+            "--package",
+            "basic",
+            "--bin",
+            "basic",
+            "--"
+        ]
     }
 }

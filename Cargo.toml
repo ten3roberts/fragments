@@ -3,8 +3,10 @@ resolver = "2"
 members = ["fragments-wgpu", "fragments-core", "examples/*"]
 
 [workspace.dependencies]
-glam = "0.23"
-flax = { git = "https://github.com/ten3roberts/flax", version = "*" }
+glam = "0.24"
+flax = { git = "https://github.com/ten3roberts/flax", version = "*", features = [
+    "derive",
+] }
 anyhow = "1.0"
 tracing = "0.1"
 parking_lot = "0.12"

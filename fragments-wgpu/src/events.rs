@@ -1,9 +1,10 @@
 use flax::component;
-use fragments_core::events::EventHandler;
+use fragments_core::{context, events::EventHandler};
 use winit::{dpi::PhysicalSize, event::KeyboardInput};
 
-component! {
-    pub on_frame: EventHandler<()>,
-    pub on_resize: EventHandler<PhysicalSize<u32>>,
-    pub on_keyboard_input: EventHandler<KeyboardInput>,
+pub struct RedrawEvent;
+pub struct ResizeEvent(pub PhysicalSize<u32>);
+
+context! {
+    pub(crate) window_size:PhysicalSize<u32>,
 }

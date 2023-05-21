@@ -1,9 +1,11 @@
-use std::any::type_name;
-
+use crate::{
+    components::ordered_children,
+    effect::{FutureEffect, StreamEffect},
+    signal::Signal,
+    Scope, Widget,
+};
 use flax::name;
-use futures::Future;
-
-use crate::{components::ordered_children, effect::FutureEffect, signal::Signal, Scope, Widget};
+use futures::{Future, Stream};
 
 use super::WidgetCollection;
 
@@ -52,6 +54,29 @@ where
             child = Some(id);
         });
 
-        scope.set(name(), type_name::<Self>().into());
+        scope.set(name(), tynm::type_name::<Self>());
+    }
+}
+
+pub struct Streaming<S>(pub S);
+
+impl<S> Widget for Streaming<S>
+where
+    S: 'static + Stream,
+    S::Item: Widget,
+{
+    fn mount(self, scope: &mut crate::Scope) {
+        let mut child = None;
+
+        scope.create_effect(StreamEffect::new(self.0, move |scope: &mut Scope, item| {
+            if let Some(id) = child.take() {
+                scope.detach(id);
+            }
+
+            let id = scope.attach(item);
+            child = Some(id);
+        }));
+
+        scope.set(name(), tynm::type_name::<Self>());
     }
 }

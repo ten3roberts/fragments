@@ -1,17 +1,15 @@
-use std::{sync::Arc, task::Context};
+use std::sync::Arc;
 
-use flax::{name, World};
-use fragments_core::{effect::Executor, events::EventEmitter, frame::Frame, Widget};
-use wgpu::{Color, CommandEncoderDescriptor, Operations, RenderPassDescriptor};
+use flax::World;
+use fragments_core::{effect::Executor, events::EventRegistry, frame::Frame, Widget};
 use winit::{
     event::Event,
     event_loop::{ControlFlow, EventLoop},
-    window::{Window, WindowBuilder},
+    window::WindowBuilder,
 };
 
 use crate::{
-    events::{on_frame, on_resize},
-    gpu::Gpu,
+    events::{RedrawEvent, ResizeEvent},
     graphics::GpuProvider,
 };
 
@@ -42,26 +40,29 @@ impl App {
         let mut executor = Executor::new();
 
         // Contains the state
-        let mut frame = Frame::new(World::new(), executor.spawner());
+        let mut frame = Frame::new(
+            World::new(),
+            executor.spawner(),
+            Arc::new(EventRegistry::new()),
+        );
 
         let event_loop = EventLoop::new();
         let window = WindowBuilder::new().build(&event_loop)?;
 
         frame.spawn_root(GpuProvider::new(window, root));
 
-        let mut on_redraw = EventEmitter::new(on_frame());
-        let mut on_resize = EventEmitter::new(on_resize());
+        let events = frame.events.clone();
         event_loop.run(move |event, _, ctl| match event {
             Event::MainEventsCleared => {
+                events.emit(&mut frame, &RedrawEvent);
                 executor.update(&mut frame);
-                on_redraw.emit(&frame.world, &());
             }
             Event::WindowEvent { window_id, event } => match event {
                 winit::event::WindowEvent::CloseRequested => {
                     *ctl = ControlFlow::Exit;
                 }
                 winit::event::WindowEvent::Resized(new_size) => {
-                    on_resize.emit(&frame.world, &new_size);
+                    events.emit(&mut frame, &ResizeEvent(new_size));
                 }
                 _ => {}
             },

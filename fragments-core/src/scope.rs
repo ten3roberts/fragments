@@ -1,4 +1,7 @@
-use std::task::{Context, Poll};
+use std::{
+    marker::PhantomData,
+    task::{Context, Poll},
+};
 
 use atomic_refcell::AtomicRef;
 use flax::{
@@ -58,7 +61,10 @@ impl<'a> Scope<'a> {
     /// Creates a new effect to be run in this scope
     ///
     /// The effect will be stopped when the widget is unmounted
-    pub fn create_effect(&mut self, effect: impl 'static + for<'x> Effect<Scope<'x>>) {
+    pub fn create_effect<E>(&mut self, effect: E)
+    where
+        E: 'static + for<'x> Effect<Scope<'x>>,
+    {
         let effect = Lift {
             effect,
             id: self.id,
@@ -116,11 +122,12 @@ impl<'a> Scope<'a> {
         self.flush();
 
         let mut child = Scope::spawn(self.frame);
-        child.set(name(), std::any::type_name::<W>().into());
+        child.set(name(), tynm::type_name::<W>());
+        child.set(child_of(self.id), ());
+        child.flush();
 
         widget.mount(&mut child);
 
-        child.set(child_of(self.id), ());
         child.id
     }
 
@@ -167,21 +174,37 @@ impl<'a> Scope<'a> {
     //     self.use_effect(StreamEffect::new(fut, func))
     // }
 
-    // /// Provide a context to all children
-    // pub fn provide_context<T: ComponentValue>(
-    //     &mut self,
-    //     key: ContextKey<T>,
-    //     value: T,
-    // ) -> &mut Self {
-    //     self.set(key.into_raw(), value);
-    //     self
-    // }
+    /// React to globally emitted events
+    pub fn on_global_event<T: 'static>(
+        &mut self,
+        handler: impl 'static + FnMut(&mut Scope<'_>, &T),
+    ) {
+        self.frame
+            .events
+            .register::<T>(Box::new(ScopedEventHandler {
+                handler,
+                id: self.id,
+                _marker: PhantomData,
+            }));
+    }
+
+    /// Provide a context to all children
+    pub fn provide_context<T: ComponentValue>(
+        &mut self,
+        key: ContextKey<T>,
+        value: T,
+    ) -> &mut Self {
+        self.set(key.into_raw(), value);
+        self
+    }
 
     /// Consumes a context provided higher up in the tree.
     pub fn consume_context<T: ComponentValue>(&self, key: ContextKey<T>) -> Option<AtomicRef<T>> {
         let world = &self.frame.world;
+        tracing::info!(?self.id, "World:  {world:#?}");
         let mut cur = world.entity(self.id).unwrap();
         let key = key.into_raw();
+
         loop {
             if let Ok(value) = cur.get(key) {
                 return Some(value);
@@ -309,6 +332,27 @@ where
                 tracing::info!("Scope was despawned, aborting effect");
                 Poll::Ready(())
             }
+        }
+    }
+}
+
+struct ScopedEventHandler<F, T> {
+    handler: F,
+    id: Entity,
+    _marker: PhantomData<T>,
+}
+
+impl<F, T> EventHandler<T> for ScopedEventHandler<F, T>
+where
+    F: FnMut(&mut Scope<'_>, &T),
+{
+    fn on_event(&mut self, frame: &mut Frame, event: &T) -> bool {
+        match Scope::try_from_id(frame, self.id) {
+            Some(mut scope) => {
+                (self.handler)(&mut scope, event);
+                true
+            }
+            None => false,
         }
     }
 }

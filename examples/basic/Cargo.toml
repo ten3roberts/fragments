@@ -14,7 +14,7 @@ fragments-core = { path = "../../fragments-core" }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-tree = "0.2"
 tracing = "0.1"
-
+glam = "0.24"
 tokio = { version = "1.0", features = [
     "rt-multi-thread",
     "sync",
