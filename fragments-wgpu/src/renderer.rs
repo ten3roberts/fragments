@@ -1,131 +1,119 @@
-use std::{borrow::Cow, sync::Arc};
+use std::sync::Arc;
 
-use bytemuck::Zeroable;
-use flax::{Component, Fetch, Query, World};
-use fragments_core::layout::{position, size};
-use glam::{vec3, Mat4, Vec2};
-use wgpu::{BindGroup, BindGroupLayout, BufferUsages, RenderPass, ShaderStages};
+use bytemuck::{Pod, Zeroable};
+use flax::{Entity, Query, World};
+use glam::Mat4;
+use wgpu::{
+    BindGroup, BufferUsages, Color, CommandEncoderDescriptor, Operations, RenderPassDescriptor,
+    ShaderStages,
+};
 
 use crate::{
     bind_groups::{BindGroupBuilder, BindGroupLayoutBuilder},
     gpu::Gpu,
-    graphics::{
-        shader::{Shader, ShaderDesc},
-        TypedBuffer,
-    },
-    mesh::{Mesh, Vertex, VertexDesc},
+    graphics::{proj_matrix, view_matrix, TypedBuffer},
+    quad_renderer::QuadRenderer,
 };
 
-pub struct QuadRenderer {
-    gpu: Arc<Gpu>,
-    quad: Mesh,
-    objects: Vec<Object>,
-    object_buffer: TypedBuffer<Object>,
-    object_bind_group: BindGroup,
-    object_query: Query<ObjectQuery>,
-    shader: Shader,
+#[derive(Clone, Copy, Pod, Zeroable, Debug)]
+#[repr(C)]
+struct Globals {
+    view: Mat4,
+    proj: Mat4,
 }
 
-impl QuadRenderer {
-    pub fn new(gpu: &Arc<Gpu>, globals_layout: &BindGroupLayout) -> Self {
-        const VERTICES: &[Vertex] = &[
-            Vertex::new(vec3(-0.5, -0.5, 0.0)),
-            Vertex::new(vec3(0.5, -0.5, 0.0)),
-            Vertex::new(vec3(0.5, 0.5, 0.0)),
-            Vertex::new(vec3(-0.5, 0.5, 0.0)),
-        ];
+pub struct Renderer {
+    camera: Entity,
+    gpu: Arc<Gpu>,
+    globals_bind_group: BindGroup,
+    globals: TypedBuffer<Globals>,
+    quad_renderer: QuadRenderer,
+}
 
-        const INDICES: &[u32] = &[0, 1, 2, 2, 3, 0];
-
-        let quad = Mesh::new(gpu, VERTICES, INDICES);
-
-        let object_buffer = TypedBuffer::new(
+impl Renderer {
+    pub fn new(gpu: &Arc<Gpu>, camera: Entity) -> Self {
+        let globals = TypedBuffer::new(
             gpu,
-            "object_buffer",
-            BufferUsages::STORAGE | BufferUsages::COPY_DST,
-            &[Object::zeroed(); 64],
+            "globals",
+            BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+            &[Globals {
+                view: Mat4::IDENTITY,
+                proj: Mat4::IDENTITY,
+            }],
         );
 
-        let object_layout = BindGroupLayoutBuilder::new("quad_renderer")
-            .bind_storage_buffer(ShaderStages::VERTEX)
+        let layout = BindGroupLayoutBuilder::new("globals")
+            .bind_uniform_buffer(ShaderStages::VERTEX)
             .build(gpu);
 
-        let object_bind_group = BindGroupBuilder::new("quad_renderer")
-            .bind_buffer(&object_buffer)
-            .build(gpu, &object_layout);
-
-        let shader = Shader::new(
-            gpu,
-            ShaderDesc {
-                label: "quad_renderer",
-                source: include_str!("../assets/solid.wgsl").into(),
-                format: gpu.surface_format(),
-                vertex_layouts: Cow::Borrowed(&[Vertex::layout()]),
-                layouts: &[globals_layout, &object_layout],
-            },
-        );
+        let globals_bind_group = BindGroupBuilder::new("globals")
+            .bind_buffer(&globals)
+            .build(gpu, &layout);
 
         Self {
+            camera,
             gpu: gpu.clone(),
-            quad,
-            objects: Vec::new(),
-            object_bind_group,
-            object_buffer,
-            object_query: Query::new(ObjectQuery::new()),
-            shader,
+            quad_renderer: QuadRenderer::new(gpu, &layout),
+            globals_bind_group,
+            globals,
         }
     }
 
-    pub fn update(&mut self, world: &World) {
-        let mut borrow = self.object_query.borrow(world);
-        let iter = borrow.iter().map(|q| {
-            let world_matrix = Mat4::from_scale_rotation_translation(
-                q.size.extend(1.0),
-                Default::default(),
-                q.pos.extend(0.1),
-            );
-            Object { world_matrix }
-        });
-
-        self.objects.clear();
-        self.objects.extend(iter);
-
-        self.object_buffer.write(&self.gpu.queue, &self.objects);
-    }
-
-    pub fn draw<'a>(&'a self, global_bind_groups: &'a BindGroup, render_pass: &mut RenderPass<'a>) {
-        render_pass.set_pipeline(self.shader.pipeline());
-
-        for (i, bind_group) in [global_bind_groups, &self.object_bind_group]
-            .iter()
-            .enumerate()
+    pub fn update(&mut self, world: &mut World) -> anyhow::Result<()> {
+        if let Ok((&view, &proj)) = Query::new((view_matrix(), proj_matrix()))
+            .borrow(&world)
+            .get(self.camera)
         {
-            render_pass.set_bind_group(i as _, bind_group, &[]);
+            let globals = Globals { view, proj };
+
+            self.globals.write(&self.gpu.queue, &[globals]);
+        } else {
+            tracing::error!("No camera");
         }
 
-        self.quad.bind(render_pass);
+        self.quad_renderer.update(world);
 
-        render_pass.draw_indexed(0..6, 0, 0..self.objects.len() as _);
+        Ok(())
     }
-}
 
-#[repr(C)]
-#[derive(bytemuck::Pod, bytemuck::Zeroable, Clone, Copy, Debug)]
-struct Object {
-    world_matrix: Mat4,
-}
+    pub fn draw(&mut self) -> anyhow::Result<()> {
+        let gpu = &self.gpu;
+        let surface = gpu.surface.get_current_texture().unwrap();
+        let view = surface.texture.create_view(&Default::default());
 
-#[derive(Debug, Fetch)]
-struct ObjectQuery {
-    size: Component<Vec2>,
-    pos: Component<Vec2>,
-}
+        let mut encoder = self
+            .gpu
+            .device
+            .create_command_encoder(&CommandEncoderDescriptor {
+                label: Some("draw"),
+            });
 
-impl ObjectQuery {
-    fn new() -> Self {
-        Self {
-            size: size(),
-            pos: position(),
+        {
+            let mut render_pass = encoder.begin_render_pass(&RenderPassDescriptor {
+                label: None,
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: Operations {
+                        load: wgpu::LoadOp::Clear(Color {
+                            r: 0.2,
+                            g: 0.0,
+                            b: 0.5,
+                            a: 1.0,
+                        }),
+                        store: true,
+                    },
+                })],
+                depth_stencil_attachment: None,
+            });
+
+            self.quad_renderer
+                .draw(&self.globals_bind_group, &mut render_pass)
         }
+
+        gpu.queue.submit([encoder.finish()]);
+        surface.present();
+
+        Ok(())
     }
 }

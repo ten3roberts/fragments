@@ -1,9 +1,9 @@
-use std::marker::PhantomData;
+use std::{marker::PhantomData, mem};
 
 use bytemuck::Pod;
 use wgpu::{
     util::{BufferInitDescriptor, DeviceExt},
-    Buffer, BufferUsages, Queue,
+    Buffer, BufferDescriptor, BufferUsages, CommandEncoder, Queue,
 };
 
 use crate::gpu::Gpu;
@@ -41,8 +41,28 @@ where
         }
     }
 
+    pub fn new_uninit(gpu: &Gpu, label: &str, usage: BufferUsages, len: usize) -> Self {
+        let buffer = gpu.device.create_buffer(&BufferDescriptor {
+            label: Some(label),
+            usage,
+            size: (mem::size_of::<T>() as u64 * len as u64),
+            mapped_at_creation: false,
+        });
+
+        Self {
+            buffer,
+            len,
+            _marker: PhantomData,
+        }
+    }
+
+    #[inline]
     pub fn len(&self) -> usize {
         self.len
+    }
+
+    pub fn copy_from_buffer(&mut self, encoder: &mut CommandEncoder, src: &Self) {
+        encoder.copy_buffer_to_buffer(&src.buffer, 0, &self.buffer, 0, src.len() as _)
     }
 
     pub fn write(&self, queue: &Queue, data: &[T]) {

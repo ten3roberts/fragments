@@ -1,3 +1,4 @@
+pub mod assets;
 pub mod components;
 pub mod context;
 pub mod effect;

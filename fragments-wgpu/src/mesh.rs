@@ -65,6 +65,20 @@ impl Mesh {
         }
     }
 
+    /// Creates a new mesh with dimensions 1x1
+    pub fn square(gpu: &Gpu) -> Self {
+        let vertices = [
+            Vertex::new(vec3(0.0, 0.0, 0.0)),
+            Vertex::new(vec3(1.0, 0.0, 0.0)),
+            Vertex::new(vec3(1.0, 1.0, 0.0)),
+            Vertex::new(vec3(0.0, 1.0, 0.0)),
+        ];
+
+        let indices = [0, 1, 2, 2, 3, 0];
+
+        Self::new(gpu, &vertices, &indices)
+    }
+
     pub fn bind<'a>(&'a self, render_pass: &mut RenderPass<'a>) {
         render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
         render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);

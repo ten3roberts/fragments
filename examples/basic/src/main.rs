@@ -3,10 +3,11 @@ use fragments_core::{
     effect::StreamEffect,
     layout::{position, size},
     signal::{Mutable, Signal},
-    time::interval,
+    time::{interval, sleep, sleep_until},
     Scope, Widget,
 };
 use fragments_wgpu::{app::AppBuilder, events::RedrawEvent};
+use futures::{stream, StreamExt};
 use glam::{vec2, Vec2};
 use std::{
     f32::consts::PI,
@@ -111,6 +112,15 @@ impl Widget for App {
             ),
         }));
 
+        scope.create_effect(StreamEffect::new(
+            interval(Duration::from_millis(100)).enumerate(),
+            |s: &mut Scope, (i, _)| {
+                s.attach(Rect {
+                    size: vec2(20.0, 20.0),
+                    pos: vec2((i % 32) as f32 * 25.0, (i / 32) as f32 * 25.0),
+                });
+            },
+        ));
         let task = tokio::spawn(async move {
             let mut interval = interval(Duration::from_millis(200));
             loop {

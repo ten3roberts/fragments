@@ -1,8 +1,15 @@
-use flax::component;
+use std::sync::Arc;
 
-use crate::gpu::Gpu;
+use flax::{component, Debuggable};
+
+use crate::{gpu::Gpu, graphics::shader::Shader, mesh::Mesh};
 
 component! {
-    pub graphics_state: Gpu,
+    pub(crate) graphics_state: Gpu,
+    pub(crate) mesh: Arc<Mesh>,
+    pub(crate) shader: Arc<Shader>,
 }
 
+component! {
+    pub rectangle: () => [ Debuggable ],
+}
