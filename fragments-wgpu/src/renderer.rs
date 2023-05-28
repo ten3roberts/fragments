@@ -116,4 +116,8 @@ impl Renderer {
 
         Ok(())
     }
+
+    pub(crate) fn resize(&self, new_size: winit::dpi::PhysicalSize<u32>) {
+        self.gpu.resize(new_size)
+    }
 }

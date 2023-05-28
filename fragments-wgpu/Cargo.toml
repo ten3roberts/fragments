@@ -18,6 +18,8 @@ winit = { version = "0.28", default_features = true }
 raw-window-handle = "0.5"
 bytemuck = { version = "1.13", features = ["derive"] }
 closure = "0.3"
+palette = "0.7"
+once_cell = "1"
 
 thiserror = "1.0"
 futures = "0.3"
@@ -25,10 +27,10 @@ flume = "0.10.14"
 slotmap = "1.0.6"
 
 [dev-dependencies]
-tracing-tree = "0.2.2"
-tracing-subscriber = { version = "0.3.16", features = ["env-filter"] }
+tracing-tree = "0.2.3"
+tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
 tokio-stream = "0.1"
-tokio = { version = "1.22", features = [
+tokio = { version = "1.28", features = [
     "macros",
     "test-util",
     "rt-multi-thread",

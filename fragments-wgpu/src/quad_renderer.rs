@@ -1,12 +1,14 @@
 use std::{borrow::Cow, sync::Arc};
 
 use bytemuck::Zeroable;
-use flax::{Component, Fetch, Query, World};
+use flax::{Component, Fetch, FetchExt, OptOr, Query, World};
 use fragments_core::{
     assets::AssetKey,
+    components::color,
     layout::{position, size},
 };
-use glam::{vec3, Mat4, Vec2};
+use glam::{Mat4, Vec2, Vec4};
+use palette::Srgba;
 use wgpu::{BindGroup, BindGroupLayout, BufferUsages, CommandEncoder, RenderPass, ShaderStages};
 
 use crate::{
@@ -80,7 +82,10 @@ impl QuadRenderer {
                 Default::default(),
                 q.pos.extend(0.1),
             );
-            Object { world_matrix }
+            Object {
+                world_matrix,
+                color: *q.color.into_linear().as_ref(),
+            }
         });
 
         self.objects.clear();
@@ -130,12 +135,14 @@ impl QuadRenderer {
 #[derive(bytemuck::Pod, bytemuck::Zeroable, Clone, Copy, Debug)]
 struct Object {
     world_matrix: Mat4,
+    color: [f32; 4],
 }
 
 #[derive(Debug, Fetch)]
 struct ObjectQuery {
     size: Component<Vec2>,
     pos: Component<Vec2>,
+    color: OptOr<Component<Srgba>, Srgba>,
 }
 
 impl ObjectQuery {
@@ -143,6 +150,7 @@ impl ObjectQuery {
         Self {
             size: size(),
             pos: position(),
+            color: color().opt_or(Srgba::new(1.0, 1.0, 1.0, 1.0)),
         }
     }
 }

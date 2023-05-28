@@ -1,14 +1,15 @@
 use fragments_core::{
-    components::text,
+    components::{color, text},
     effect::StreamEffect,
     layout::{position, size},
     signal::{Mutable, Signal},
-    time::{interval, sleep, sleep_until},
+    time::interval,
     Scope, Widget,
 };
 use fragments_wgpu::{app::AppBuilder, events::RedrawEvent};
-use futures::{stream, StreamExt};
-use glam::{vec2, Vec2};
+use futures::StreamExt;
+use glam::{vec2, IVec2, Vec2};
+use palette::{Hsla, IntoColor};
 use std::{
     f32::consts::PI,
     time::{Duration, Instant},
@@ -41,6 +42,26 @@ impl Widget for Rect {
     fn mount(self, scope: &mut Scope) {
         scope.set(size(), self.size);
         scope.set(position(), self.pos);
+    }
+}
+
+struct GradientRect {
+    size: Vec2,
+    pos: Vec2,
+}
+
+impl Widget for GradientRect {
+    fn mount(self, scope: &mut Scope) {
+        scope.set(size(), self.size);
+        scope.set(position(), self.pos);
+
+        let now = Instant::now();
+        scope.on_global_event(move |scope, &RedrawEvent| {
+            scope.set(
+                color(),
+                Hsla::new(now.elapsed().as_secs_f32() * 10.0, 1.0, 0.5, 1.0).into_color(),
+            )
+        });
     }
 }
 
@@ -90,11 +111,6 @@ impl Widget for App {
         let count = Mutable::new(0);
 
         scope.attach(count.signal().map(|v| Text(v.to_string())));
-        // scope.attach(DebugWorld);
-        // scope.attach(Rect {
-        //     size: vec2(50.0, 50.0),
-        //     pos: vec2(100.0, 100.0),
-        // });
 
         scope.attach(Animated::new(move |t| Rect {
             size: vec2(50.0, 50.0),
@@ -113,14 +129,30 @@ impl Widget for App {
         }));
 
         scope.create_effect(StreamEffect::new(
-            interval(Duration::from_millis(100)).enumerate(),
-            |s: &mut Scope, (i, _)| {
-                s.attach(Rect {
-                    size: vec2(20.0, 20.0),
-                    pos: vec2((i % 32) as f32 * 25.0, (i / 32) as f32 * 25.0),
+            interval(Duration::from_millis(20))
+                .enumerate()
+                .take(400 * 400),
+            move |s: &mut Scope, (i, _)| {
+                let i = i as i32;
+
+                let size = 20.0;
+                let cols = (800.0 / size) as i32;
+                let row = i / cols;
+
+                // Snake downwards
+                let col = if row % 2 == 0 {
+                    i % cols
+                } else {
+                    cols - (i % cols) - 1
+                };
+
+                s.attach(GradientRect {
+                    size: vec2(size, size),
+                    pos: vec2(col as f32, row as f32) * (size + 2.0),
                 });
             },
         ));
+
         let task = tokio::spawn(async move {
             let mut interval = interval(Duration::from_millis(200));
             loop {

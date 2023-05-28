@@ -134,7 +134,10 @@ impl Shared {
     }
 }
 
-/// Executes `Tasks`
+/// The executor drives the UI reactivity and update scheduling
+///
+/// Is eerily similar to a single threaded task executor, except each "poll" has a mutable
+/// reference to the [`Frame`](crate::frame::Frame)
 pub struct Executor<T> {
     /// Tasks are stored inline
     tasks: slotmap::SlotMap<TaskKey, (Task<T>, Arc<TaskWaker>)>,

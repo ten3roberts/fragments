@@ -1,4 +1,5 @@
 use flax::*;
+use palette::Srgba;
 
 use crate::effect::TaskHandle;
 
@@ -31,5 +32,8 @@ component! {
     /// Runs when a widget is unmounted/detached
 
     pub text: String => [ Debuggable ],
+
+    pub color: Srgba => [ Debuggable ],
+
     pub resources,
 }

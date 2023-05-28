@@ -5,10 +5,12 @@ struct VertexInput {
 
 struct VertexOutput {
     @builtin(position) pos: vec4<f32>,
+    @location(0) color: vec4<f32>,
 }
 
 struct Object {
     world_matrix: mat4x4<f32>,
+    color: vec4<f32>,
 }
 
 struct Globals {
@@ -27,10 +29,12 @@ fn vs_main(in: VertexInput) -> VertexOutput {
     var out: VertexOutput;
     let object = objects[in.instance];
     out.pos = globals.proj * object.world_matrix * vec4<f32>(in.pos, 1.0);
+    out.color = object.color;
+
     return out;
 }
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    return vec4<f32>(1.0, 1.0, 1.0, 1.0);
+    return in.color;
 }

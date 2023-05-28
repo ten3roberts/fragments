@@ -10,7 +10,7 @@ use crate::{effect::TaskSpawner, events::EventRegistry, Scope, Widget};
 pub struct Frame {
     pub world: World,
     /// Handle allowing spawning of tasks
-    pub(crate) spawner: TaskSpawner<Frame>,
+    pub spawner: TaskSpawner<Frame>,
     pub events: Arc<EventRegistry>,
 }
 

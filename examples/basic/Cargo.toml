@@ -15,7 +15,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-tree = "0.2"
 tracing = "0.1"
 glam = "0.24"
-tokio = { version = "1.0", features = [
+tokio = { version = "1.28", features = [
     "rt-multi-thread",
     "sync",
     "macros",
@@ -26,3 +26,4 @@ tokio-stream = "0.1"
 tokio-utils = "0.1.2"
 futures = "0.3"
 closure = "0.3"
+palette = "0.7"

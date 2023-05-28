@@ -86,6 +86,15 @@ impl<'a> Scope<'a> {
         self.create_effect(SignalEffect::new(signal, func))
     }
 
+    /// Executes `func` within the scope of the widget when the async future completes.
+    pub fn use_async<T>(
+        &mut self,
+        future: impl 'static + Future<Output = T>,
+        func: impl 'static + FnOnce(&mut Scope, T),
+    ) {
+        self.create_effect(FutureEffect::new(future, func))
+    }
+
     pub fn on_cleanup(&mut self, func: impl 'static + Send + Sync + FnOnce()) {
         self.flush();
         self.frame

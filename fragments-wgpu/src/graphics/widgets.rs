@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use flax::name;
-use fragments_core::{common::AsyncWidget, Widget};
+use fragments_core::Widget;
 use glam::Mat4;
 use winit::window::Window;
 
@@ -30,36 +30,24 @@ where
         scope.provide_context(window_size(), self.window.inner_size());
 
         scope.set(name(), "GpuProvider".into());
-        let gpu = AsyncWidget(async move {
-            let gpu = Gpu::new(self.window).await;
-            tracing::info!("Created gpu");
-            GpuView { gpu: Arc::new(gpu) }
-        });
 
-        scope.attach(gpu);
-        scope.attach(self.root);
-    }
-}
+        let root = self.root;
+        scope.use_async(Gpu::new(self.window), move |scope, gpu| {
+            let gpu = Arc::new(gpu);
+            let camera = scope.attach(MainCamera {});
+            let mut renderer = Renderer::new(&gpu, camera);
 
-pub struct GpuView {
-    gpu: Arc<Gpu>,
-}
+            scope.on_global_event(move |s, RedrawEvent| {
+                renderer.update(&mut s.frame_mut().world).unwrap();
+                renderer.draw().unwrap();
+            });
 
-impl Widget for GpuView {
-    fn mount(self, scope: &mut fragments_core::Scope) {
-        scope.set(name(), "GpuView".into());
+            scope.on_global_event(move |_, &ResizeEvent(new_size)| {
+                tracing::info!("Rezing");
+                gpu.resize(new_size);
+            });
 
-        let camera = scope.attach(MainCamera {});
-        let mut renderer = Renderer::new(&self.gpu, camera);
-
-        scope.on_global_event(move |s, RedrawEvent| {
-            renderer.update(&mut s.frame_mut().world).unwrap();
-            renderer.draw().unwrap();
-        });
-
-        scope.on_global_event(move |_, &ResizeEvent(new_size)| {
-            tracing::info!("Rezing");
-            self.gpu.resize(new_size);
+            scope.attach(root);
         });
     }
 }
@@ -91,4 +79,5 @@ impl Widget for MainCamera {
 flax::component! {
     pub view_matrix: Mat4,
     pub proj_matrix: Mat4,
+    pub scale_to_window: (),
 }
