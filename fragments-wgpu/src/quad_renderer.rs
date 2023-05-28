@@ -1,7 +1,7 @@
 use std::{borrow::Cow, sync::Arc};
 
 use bytemuck::Zeroable;
-use flax::{Component, Fetch, FetchExt, OptOr, Query, World};
+use flax::{All, And, Component, Fetch, FetchExt, OptOr, Query, With, World};
 use fragments_core::{
     assets::AssetKey,
     components::color,
@@ -19,6 +19,7 @@ use crate::{
         TypedBuffer,
     },
     mesh::{Mesh, Vertex, VertexDesc},
+    rectangle,
 };
 
 pub struct QuadRenderer {
@@ -28,7 +29,8 @@ pub struct QuadRenderer {
     object_buffer: TypedBuffer<Object>,
     object_bind_group: BindGroup,
     object_layout: BindGroupLayout,
-    object_query: Query<ObjectQuery>,
+    /// TODO move to a separate system a'la ECS
+    object_query: Query<ObjectQuery, And<All, With>>,
     shader: Shader,
 }
 
@@ -68,7 +70,7 @@ impl QuadRenderer {
             objects: Vec::new(),
             object_bind_group,
             object_buffer,
-            object_query: Query::new(ObjectQuery::new()),
+            object_query: Query::new(ObjectQuery::new()).with(rectangle()),
             shader,
             object_layout,
         }

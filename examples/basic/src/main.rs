@@ -1,12 +1,12 @@
 use fragments_core::{
     components::{color, text},
     effect::StreamEffect,
-    layout::{position, size},
+    layout::{min_width, position, size},
     signal::{Mutable, Signal},
     time::interval,
     Scope, Widget,
 };
-use fragments_wgpu::{app::AppBuilder, events::RedrawEvent};
+use fragments_wgpu::{app::AppBuilder, events::RedrawEvent, rectangle};
 use futures::StreamExt;
 use glam::{vec2, IVec2, Vec2};
 use palette::{Hsla, IntoColor};
@@ -23,6 +23,8 @@ struct DebugWorld;
 impl Widget for DebugWorld {
     #[tracing::instrument(level = "info", skip(scope))]
     fn mount(self, scope: &mut Scope) {
+        scope.set_default(size());
+        scope.set_default(position());
         scope.create_effect(StreamEffect::new(
             interval(Duration::from_millis(2000)),
             |s: &mut Scope, _| {
@@ -35,13 +37,13 @@ impl Widget for DebugWorld {
 
 struct Rect {
     size: Vec2,
-    pos: Vec2,
 }
 
 impl Widget for Rect {
     fn mount(self, scope: &mut Scope) {
         scope.set(size(), self.size);
-        scope.set(position(), self.pos);
+        scope.set_default(rectangle());
+        scope.set_default(position());
     }
 }
 
@@ -53,7 +55,9 @@ struct GradientRect {
 impl Widget for GradientRect {
     fn mount(self, scope: &mut Scope) {
         scope.set(size(), self.size);
-        scope.set(position(), self.pos);
+        scope.set_default(rectangle());
+        scope.set(min_width(), self.size.x);
+        scope.set_default(position());
 
         let now = Instant::now();
         scope.on_global_event(move |scope, &RedrawEvent| {
@@ -110,28 +114,29 @@ impl Widget for App {
     fn mount(self, scope: &mut fragments_core::Scope) {
         let count = Mutable::new(0);
 
-        scope.attach(count.signal().map(|v| Text(v.to_string())));
+        scope.set_default(size());
+        scope.set_default(position());
 
-        scope.attach(Animated::new(move |t| Rect {
-            size: vec2(50.0, 50.0),
-            pos: vec2(
-                400.0 + (t.as_secs_f32() * PI).sin() * 200.0,
-                300.0 + (t.as_secs_f32() * PI).cos() * 200.0,
-            ),
-        }));
+        // scope.attach(count.signal().map(|v| Text(v.to_string())));
 
-        scope.attach(Animated::new(move |t| Rect {
-            size: vec2(100.0, 100.0),
-            pos: vec2(
-                400.0 + t.as_secs_f32().sin() * 400.0,
-                200.0 + (t.as_secs_f32() * PI).cos() * 200.0,
-            ),
-        }));
+        // scope.attach(Animated::new(move |t| Rect {
+        //     size: vec2(50.0, 50.0),
+        //     // pos: vec2(
+        //     //     400.0 + (t.as_secs_f32() * PI).sin() * 200.0,
+        //     //     300.0 + (t.as_secs_f32() * PI).cos() * 200.0,
+        //     // ),
+        // }));
+
+        // scope.attach(Animated::new(move |t| Rect {
+        //     size: vec2(100.0, 100.0),
+        //     // pos: vec2(
+        //     //     400.0 + t.as_secs_f32().sin() * 400.0,
+        //     //     200.0 + (t.as_secs_f32() * PI).cos() * 200.0,
+        //     // ),
+        // }));
 
         scope.create_effect(StreamEffect::new(
-            interval(Duration::from_millis(20))
-                .enumerate()
-                .take(400 * 400),
+            interval(Duration::from_millis(200)).enumerate().take(10),
             move |s: &mut Scope, (i, _)| {
                 let i = i as i32;
 

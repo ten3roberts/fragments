@@ -2,6 +2,7 @@ use wgpu::{Adapter, Backends, SurfaceCapabilities, SurfaceConfiguration, Texture
 use winit::{dpi::PhysicalSize, window::Window};
 
 /// Represents the Gpu and graphics state
+#[derive(Debug)]
 pub struct Gpu {
     pub surface: wgpu::Surface,
     adapter: Adapter,

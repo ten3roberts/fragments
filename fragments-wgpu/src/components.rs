@@ -9,6 +9,8 @@ component! {
     pub(crate) mesh: Arc<Mesh>,
     pub(crate) shader: Arc<Shader>,
 
+
+
 }
 
 component! {

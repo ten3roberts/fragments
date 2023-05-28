@@ -115,9 +115,14 @@ impl<'a> Scope<'a> {
 }
 
 impl<'a> Scope<'a> {
-    /// Sets the component within the scope
+    /// Sets the component for the widget
     pub fn set<T: ComponentValue>(&mut self, component: Component<T>, value: T) {
         self.data.set(component, value);
+    }
+
+    /// Sets the component for the widget using the default value
+    pub fn set_default<T: ComponentValue + Default>(&mut self, component: Component<T>) {
+        self.data.set_default(component);
     }
 
     pub fn remove<T: ComponentValue>(&mut self, component: Component<T>) {
@@ -131,13 +136,24 @@ impl<'a> Scope<'a> {
         self.flush();
 
         let mut child = Scope::spawn(self.frame);
+
         child.set(name(), tynm::type_name::<W>());
         child.set(child_of(self.id), ());
         child.flush();
 
         widget.mount(&mut child);
+        let id = child.id;
 
-        child.id
+        drop(child);
+
+        self.entity_mut()
+            .entry(ordered_children())
+            .or_default()
+            .push(id);
+
+        self.flush();
+
+        id
     }
 
     /// Detaches a child from the current scope
@@ -286,21 +302,23 @@ impl<'a> Scope<'a> {
     //    self.id
     //}
 
-    ///// Returns the underlying entity for the scope
-    //pub fn entity(&self) -> EntityRef {
-    //    self.frame
-    //        .world
-    //        .entity(self.id)
-    //        .expect("Entity was despawned")
-    //}
+    /// Returns the underlying entity for the scope
+    fn entity(&self) -> EntityRef {
+        assert_eq!(self.data.component_count(), 0);
+        self.frame
+            .world
+            .entity(self.id)
+            .expect("Entity was despawned")
+    }
 
-    ///// Returns the underlying entity for the scope
-    //pub fn entity_mut(&mut self) -> EntityRefMut {
-    //    self.frame
-    //        .world
-    //        .entity_mut(self.id)
-    //        .expect("Entity was despawned")
-    //}
+    /// Returns the underlying entity for the scope
+    fn entity_mut(&mut self) -> EntityRefMut {
+        assert_eq!(self.data.component_count(), 0);
+        self.frame
+            .world
+            .entity_mut(self.id)
+            .expect("Entity was despawned")
+    }
 
     pub fn frame_mut(&mut self) -> &mut &'a mut Frame {
         &mut self.frame

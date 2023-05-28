@@ -59,7 +59,7 @@ impl Renderer {
         }
     }
 
-    pub fn update(&mut self, world: &mut World) -> anyhow::Result<()> {
+    pub fn update(&mut self, world: &World) -> anyhow::Result<()> {
         if let Ok((&view, &proj)) = Query::new((view_matrix(), proj_matrix()))
             .borrow(&world)
             .get(self.camera)
