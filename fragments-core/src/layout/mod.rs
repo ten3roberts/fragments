@@ -11,6 +11,8 @@ component! {
 
     /// The current computed size of a fragment
     pub size: Vec2 => [ Debuggable ],
-    /// The final placement of a fragment
-    pub position: Vec2 => [ Debuggable ],
+    /// The final placement of a fragment on the canvas
+    pub absolute_position: Vec2 => [ Debuggable ],
+    /// The position relative the parent
+    pub local_position: Vec2 => [ Debuggable ],
 }

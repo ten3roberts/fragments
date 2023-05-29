@@ -5,7 +5,7 @@ use flax::{All, And, Component, Fetch, FetchExt, OptOr, Query, With, World};
 use fragments_core::{
     assets::AssetKey,
     components::color,
-    layout::{position, size},
+    layout::{absolute_position, size},
 };
 use glam::{Mat4, Vec2, Vec4};
 use palette::Srgba;
@@ -151,7 +151,7 @@ impl ObjectQuery {
     fn new() -> Self {
         Self {
             size: size(),
-            pos: position(),
+            pos: absolute_position(),
             color: color().opt_or(Srgba::new(1.0, 1.0, 1.0, 1.0)),
         }
     }

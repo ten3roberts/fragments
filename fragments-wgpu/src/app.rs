@@ -8,7 +8,10 @@ use fragments_core::{
     effect::Executor,
     events::EventRegistry,
     frame::Frame,
-    layout::{position, size, systems::update_layout_system},
+    layout::{
+        absolute_position, local_position, size,
+        systems::{update_layout_system, update_transform_system},
+    },
     Widget,
 };
 use glam::{vec2, Mat4, Vec2};
@@ -62,7 +65,8 @@ where
 {
     fn mount(self, scope: &mut fragments_core::Scope<'_>) {
         scope.set(size(), self.size);
-        scope.set(position(), Vec2::ZERO);
+        scope.set(absolute_position(), Vec2::ZERO);
+        scope.set(local_position(), Vec2::ZERO);
         scope.attach(self.root);
     }
 }
@@ -119,6 +123,7 @@ impl App {
 
         let mut on_frame = Schedule::new()
             .with_system(update_layout_system())
+            .with_system(update_transform_system())
             .with_system(draw_system());
 
         event_loop.run(move |event, _, ctl| match event {

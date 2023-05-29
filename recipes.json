@@ -16,6 +16,9 @@
                 "program": "./target/debug/basic",
                 "adapter": "rust"
             }
+        },
+        "env": {
+            "RUST_BACKTRACE": "1"
         }
     },
     "run basic": {
@@ -27,6 +30,9 @@
             "--bin",
             "basic",
             "--"
-        ]
+        ],
+        "env": {
+            "RUST_BACKTRACE": "1"
+        }
     }
 }

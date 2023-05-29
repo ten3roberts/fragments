@@ -1,7 +1,7 @@
 use fragments_core::{
     components::{color, text},
     effect::StreamEffect,
-    layout::{min_width, position, size},
+    layout::{absolute_position, local_position, min_height, min_width, size},
     signal::{Mutable, Signal},
     time::interval,
     Scope, Widget,
@@ -9,7 +9,7 @@ use fragments_core::{
 use fragments_wgpu::{app::AppBuilder, events::RedrawEvent, rectangle};
 use futures::StreamExt;
 use glam::{vec2, IVec2, Vec2};
-use palette::{Hsla, IntoColor};
+use palette::{rgb::Rgba, Hsla, IntoColor, LinSrgba, Srgba};
 use std::{
     f32::consts::PI,
     time::{Duration, Instant},
@@ -24,7 +24,7 @@ impl Widget for DebugWorld {
     #[tracing::instrument(level = "info", skip(scope))]
     fn mount(self, scope: &mut Scope) {
         scope.set_default(size());
-        scope.set_default(position());
+        scope.set_default(absolute_position());
         scope.create_effect(StreamEffect::new(
             interval(Duration::from_millis(2000)),
             |s: &mut Scope, _| {
@@ -43,7 +43,8 @@ impl Widget for Rect {
     fn mount(self, scope: &mut Scope) {
         scope.set(size(), self.size);
         scope.set_default(rectangle());
-        scope.set_default(position());
+        scope.set_default(absolute_position());
+        scope.set_default(local_position());
     }
 }
 
@@ -57,7 +58,9 @@ impl Widget for GradientRect {
         scope.set(size(), self.size);
         scope.set_default(rectangle());
         scope.set(min_width(), self.size.x);
-        scope.set_default(position());
+        scope.set(min_height(), self.size.y);
+        scope.set_default(absolute_position());
+        scope.set_default(local_position());
 
         let now = Instant::now();
         scope.on_global_event(move |scope, &RedrawEvent| {
@@ -115,7 +118,10 @@ impl Widget for App {
         let count = Mutable::new(0);
 
         scope.set_default(size());
-        scope.set_default(position());
+        scope.set(color(), LinSrgba::new(0.0, 0.2, 0.2, 1.0).into_color());
+        scope.set_default(absolute_position());
+        scope.set_default(rectangle());
+        scope.set_default(local_position());
 
         // scope.attach(count.signal().map(|v| Text(v.to_string())));
 
@@ -136,7 +142,7 @@ impl Widget for App {
         // }));
 
         scope.create_effect(StreamEffect::new(
-            interval(Duration::from_millis(200)).enumerate().take(10),
+            interval(Duration::from_millis(200)).enumerate().take(64),
             move |s: &mut Scope, (i, _)| {
                 let i = i as i32;
 
