@@ -9,8 +9,9 @@ use fragments_core::{
     events::EventRegistry,
     frame::Frame,
     layout::{
-        absolute_position, local_position, size,
+        absolute_position, layout, local_position, size,
         systems::{update_layout_system, update_transform_system},
+        Direction, Layout,
     },
     Widget,
 };
@@ -67,6 +68,12 @@ where
         scope.set(size(), self.size);
         scope.set(absolute_position(), Vec2::ZERO);
         scope.set(local_position(), Vec2::ZERO);
+        scope.set(
+            layout(),
+            Layout {
+                dir: Direction::Column,
+            },
+        );
         scope.attach(self.root);
     }
 }

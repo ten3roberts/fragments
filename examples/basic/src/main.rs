@@ -1,7 +1,9 @@
 use fragments_core::{
     components::{color, text},
     effect::StreamEffect,
-    layout::{absolute_position, local_position, min_height, min_width, size},
+    layout::{
+        absolute_position, layout, local_position, min_height, min_width, size, Direction, Layout,
+    },
     signal::{Mutable, Signal},
     time::interval,
     Scope, Widget,
@@ -117,11 +119,17 @@ impl Widget for App {
     fn mount(self, scope: &mut fragments_core::Scope) {
         let count = Mutable::new(0);
 
-        scope.set_default(size());
-        scope.set(color(), LinSrgba::new(0.0, 0.2, 0.2, 1.0).into_color());
+        scope.set(size(), vec2(500.0, 100.0));
+        scope.set(color(), LinSrgba::new(0.0, 0.5, 0.5, 1.0).into_color());
         scope.set_default(absolute_position());
-        scope.set_default(rectangle());
         scope.set_default(local_position());
+        scope.set_default(rectangle());
+        scope.set(
+            layout(),
+            Layout {
+                dir: Direction::Row,
+            },
+        );
 
         // scope.attach(count.signal().map(|v| Text(v.to_string())));
 
@@ -142,7 +150,7 @@ impl Widget for App {
         // }));
 
         scope.create_effect(StreamEffect::new(
-            interval(Duration::from_millis(200)).enumerate().take(64),
+            interval(Duration::from_millis(200)).enumerate().take(16),
             move |s: &mut Scope, (i, _)| {
                 let i = i as i32;
 

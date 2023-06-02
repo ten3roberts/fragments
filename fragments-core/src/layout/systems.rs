@@ -7,57 +7,12 @@ use flax::{
 use glam::{vec2, Vec2};
 use tracing::info_span;
 
-use crate::components::ordered_children;
+use crate::{
+    components::ordered_children,
+    layout::{update_layout, Constraints},
+};
 
 use super::{absolute_position, local_position, min_height, min_width, size};
-
-/// Update the size of the node given the constraints and return the size
-fn update_layout(world: &World, entity: &mut EntityRef, constraints: &Constraints) -> LayoutResult {
-    // let _span = info_span!("update_layout", ?entity, ?constraints).entered();
-
-    let mut res = LayoutResult {
-        size: constraints.min,
-    };
-
-    if let Ok(children) = entity.get(ordered_children()) {
-        let mut constraints = Constraints {
-            min: Vec2::ZERO,
-            max: constraints.max,
-        };
-
-        let mut cursor = Vec2::ZERO;
-        let mut line_height = 0.0f32;
-
-        for &child in &*children {
-            let mut child = world.entity(child).expect("Invalid child");
-            // Get the box that fits the child
-            let child_layout = update_layout(world, &mut child, &constraints);
-
-            *child.get_mut(local_position()).unwrap() = cursor;
-
-            cursor.x += child_layout.size.x + 5.0;
-            line_height = line_height.max(child_layout.size.y);
-
-            constraints.max.x -= child_layout.size.x;
-        }
-
-        cursor.y += line_height + 50.0;
-
-        res.size = cursor;
-    }
-
-    if let Ok(min_width) = entity.get(min_width()) {
-        res.size.x = res.size.x.max(*min_width);
-    }
-
-    if let Ok(min_height) = entity.get(min_height()) {
-        res.size.y = res.size.y.max(*min_height);
-    }
-
-    *entity.get_mut(size()).unwrap() = res.size;
-
-    res
-}
 
 pub fn update_transform_system() -> BoxedSystem {
     System::builder()
@@ -106,27 +61,10 @@ pub fn update_layout_system() -> BoxedSystem {
                     },
                 );
 
-                tracing::info!(?res, "Got layout result for tree {root:?}:");
+                // tracing::info!(?res, "Got layout result for tree {root:?}:");
             }
         })
         .boxed()
-}
-
-#[derive(Debug, Clone)]
-struct Constraints {
-    min: Vec2,
-    max: Vec2,
-}
-
-#[derive(Debug)]
-struct LayoutResult {
-    size: Vec2,
-}
-
-#[derive(Debug)]
-struct LayoutBox {
-    pos: Vec2,
-    size: Vec2,
 }
 
 #[derive(Fetch)]
